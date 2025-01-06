@@ -14,6 +14,7 @@
     "@heroicons/react": "^2.2.0",
     "@tanstack/react-query": "^5.62.16",
     "axios": "^1.7.9",
+    "chat-frontend": "file:",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.469.0",
     "react": "^18.3.1",

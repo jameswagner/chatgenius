@@ -23,6 +23,10 @@ export const MessageList = ({ channelId, messages, setMessages }: MessageListPro
     return groups;
   }, []);
 
+  const formatTime = (dateString: string) => {
+    return format(new Date(dateString), 'h:mm a');
+  };
+
   const renderThread = (thread: ThreadGroup) => {
     const [firstMessage, ...replies] = thread.messages;
     return (
@@ -34,7 +38,7 @@ export const MessageList = ({ channelId, messages, setMessages }: MessageListPro
             <div className="flex items-center">
               <span className="font-bold">{firstMessage.user?.name}</span>
               <span className="ml-2 text-xs text-gray-500">
-                {format(new Date(firstMessage.createdAt), 'h:mm a')}
+                {formatTime(firstMessage.createdAt)}
               </span>
             </div>
             <p className="text-gray-900">{firstMessage.content}</p>
@@ -51,7 +55,7 @@ export const MessageList = ({ channelId, messages, setMessages }: MessageListPro
                   <div className="flex items-center">
                     <span className="font-bold">{reply.user?.name}</span>
                     <span className="ml-2 text-xs text-gray-500">
-                      {format(new Date(reply.createdAt), 'h:mm a')}
+                      {formatTime(reply.createdAt)}
                     </span>
                   </div>
                   <p className="text-gray-900">{reply.content}</p>

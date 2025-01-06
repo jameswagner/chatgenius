@@ -39,6 +39,7 @@ class AuthService:
 
     def login(self, email, password):
         user = self.db.get_user_by_email(email)
+        
         if not user or not check_password_hash(user.password, password):
             raise ValueError('Invalid email or password')
             

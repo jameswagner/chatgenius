@@ -37,6 +37,10 @@ export const ThreadView = ({ parentMessage, onClose }: ThreadViewProps) => {
     }
   };
 
+  const formatTime = (dateString: string) => {
+    return format(new Date(dateString), 'h:mm a');
+  };
+
   return (
     <div className="w-96 border-l border-gray-200 flex flex-col h-full">
       <div className="p-4 border-b border-gray-200 flex justify-between items-center">
@@ -53,7 +57,7 @@ export const ThreadView = ({ parentMessage, onClose }: ThreadViewProps) => {
               <div className="flex items-center">
                 <span className="font-bold">{parentMessage.user?.name}</span>
                 <span className="ml-2 text-xs text-gray-500">
-                  {format(new Date(parentMessage.createdAt), 'h:mm a')}
+                  {formatTime(parentMessage.createdAt)}
                 </span>
               </div>
               <p className="text-gray-900">{parentMessage.content}</p>
@@ -70,7 +74,7 @@ export const ThreadView = ({ parentMessage, onClose }: ThreadViewProps) => {
                 <div className="flex items-center">
                   <span className="font-bold">{reply.user?.name}</span>
                   <span className="ml-2 text-xs text-gray-500">
-                    {format(new Date(reply.createdAt), 'h:mm a')}
+                    {formatTime(reply.createdAt)}
                   </span>
                 </div>
                 <p className="text-gray-900">{reply.content}</p>

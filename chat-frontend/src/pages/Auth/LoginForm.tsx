@@ -10,13 +10,23 @@ export const LoginForm = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+    
     try {
       const response = await api.auth.login(email, password);
+
+      if (!response.token || !response.user_id) {
+        setError('Invalid response from server');
+        return;
+      }
+
       localStorage.setItem('token', response.token);
-      localStorage.setItem('userId', response.user.id);
-      navigate('/');
-    } catch (err) {
-      setError('Invalid email or password');
+      localStorage.setItem('userId', response.user_id);
+      
+      navigate('/chat');
+      
+    } catch (error: any) {
+      setError(error.message || 'Login failed');
     }
   };
 

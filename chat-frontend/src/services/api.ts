@@ -61,8 +61,18 @@ const snakeToCamel = (obj: any): any => {
 export const api = {
   auth: {
     login: async (email: string, password: string): Promise<AuthResponse> => {
-      const response = await client.post('/auth/login', { email, password });
-      return response.data;
+      try {
+        const response = await client.post('/auth/login', { email, password });
+        if (!response.data.token || !response.data.user_id) {
+          throw new Error('Invalid server response');
+        }
+        return response.data;
+      } catch (error: any) {
+        if (error.response?.data?.error) {
+          throw new Error(error.response.data.error);
+        }
+        throw error;
+      }
     },
     register: async (name: string, email: string, password: string): Promise<AuthResponse> => {
       const response = await client.post('/auth/register', { 

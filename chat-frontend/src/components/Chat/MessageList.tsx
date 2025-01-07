@@ -4,6 +4,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { format } from 'date-fns';
 import { ThreadView } from './ThreadView';
 import { api } from '../../services/api';
+import { MessageReactions } from './MessageReactions';
 
 interface MessageListProps {
   channelId: string;
@@ -18,6 +19,8 @@ interface ThreadGroup {
 
 export const MessageList = ({ channelId, messages, setMessages }: MessageListProps) => {
   const [selectedThread, setSelectedThread] = useState<Message | null>(null);
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
+  const currentUserId = localStorage.getItem('userId');
 
   const threadGroups = messages.reduce((groups: ThreadGroup[], message) => {
     const group = groups.find(g => g.threadId === message.threadId);
@@ -47,47 +50,85 @@ export const MessageList = ({ channelId, messages, setMessages }: MessageListPro
     return formatted;
   };
 
+  const toggleThread = (threadId: string) => {
+    setExpandedThreads(prev => {
+      const next = new Set(prev);
+      if (next.has(threadId)) {
+        next.delete(threadId);
+      } else {
+        next.add(threadId);
+      }
+      return next;
+    });
+  };
+
+  const renderMessage = (message: Message, isReply = false) => {
+    const isCurrentUser = message.userId === currentUserId;
+    
+    return (
+      <div key={message.id} className="flex items-start">
+        <div className={`${isReply ? 'h-8 w-8' : 'h-10 w-10'} rounded bg-gray-300 flex-shrink-0`} />
+        <div className={`ml-3 flex-1 ${isCurrentUser ? 'bg-blue-50 p-2 rounded' : ''}`}>
+          <div className="flex items-center">
+            <span className={`font-bold ${isCurrentUser ? 'text-blue-700' : ''}`}>
+              {message.user?.name}
+            </span>
+            <span className="ml-2 text-xs text-gray-500">
+              {formatTime(message.createdAt)}
+            </span>
+          </div>
+          <p className={`${isCurrentUser ? 'text-blue-900' : 'text-gray-900'}`}>
+            {message.content}
+          </p>
+          <MessageReactions 
+            message={message} 
+            onReactionChange={() => {
+              // Refresh messages to get updated reactions
+              api.messages.list(channelId).then(setMessages);
+            }} 
+          />
+        </div>
+      </div>
+    );
+  };
+
   const renderThread = (thread: ThreadGroup) => {
     const [firstMessage, ...replies] = thread.messages;
+    const isExpanded = expandedThreads.has(thread.threadId);
+    const replyCount = replies.length;
+    const replyText = replyCount === 1 ? '1 reply' : `${replyCount} replies`;
+
     return (
       <div key={thread.threadId} className="mb-6">
         {/* First message */}
-        <div className="flex items-start">
-          <div className="h-10 w-10 rounded bg-gray-300 flex-shrink-0" />
-          <div className="ml-3 flex-1">
-            <div className="flex items-center">
-              <span className="font-bold">{firstMessage.user?.name}</span>
-              <span className="ml-2 text-xs text-gray-500">
-                {formatTime(firstMessage.createdAt)}
-              </span>
-            </div>
-            <p className="text-gray-900">{firstMessage.content}</p>
+        {renderMessage(firstMessage)}
+
+        <div className="flex items-center mt-1 space-x-3 ml-13">
+          <button 
+            onClick={() => setSelectedThread(firstMessage)}
+            className="text-sm text-blue-500 hover:text-blue-700"
+          >
+            Reply in thread
+          </button>
+          {replies.length > 0 && (
             <button 
-              onClick={() => setSelectedThread(firstMessage)}
-              className="mt-1 text-sm text-blue-500 hover:text-blue-700"
+              onClick={() => toggleThread(thread.threadId)}
+              className="text-sm text-gray-500 hover:text-gray-700 flex items-center"
             >
-              {replies.length > 0 ? `${replies.length} replies` : 'Reply in thread'}
+              <span className="mr-1">{replyText}</span>
+              <span className="transform transition-transform duration-200" style={{
+                transform: isExpanded ? 'rotate(180deg)' : 'none'
+              }}>
+                ▼
+              </span>
             </button>
-          </div>
+          )}
         </div>
 
         {/* Replies */}
-        {replies.length > 0 && (
+        {replies.length > 0 && isExpanded && (
           <div className="ml-12 mt-2 space-y-2 border-l-2 border-gray-200 pl-4">
-            {replies.map(reply => (
-              <div key={reply.id} className="flex items-start">
-                <div className="h-8 w-8 rounded bg-gray-300 flex-shrink-0" />
-                <div className="ml-3">
-                  <div className="flex items-center">
-                    <span className="font-bold">{reply.user?.name}</span>
-                    <span className="ml-2 text-xs text-gray-500">
-                      {formatTime(reply.createdAt)}
-                    </span>
-                  </div>
-                  <p className="text-gray-900">{reply.content}</p>
-                </div>
-              </div>
-            ))}
+            {replies.map(reply => renderMessage(reply, true))}
           </div>
         )}
       </div>

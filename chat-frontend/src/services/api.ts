@@ -91,6 +91,11 @@ export const api = {
       return snakeToCamel(response.data);
     },
 
+    available: async (): Promise<Channel[]> => {
+      const response = await client.get('/channels/available');
+      return snakeToCamel(response.data);
+    },
+
     create: async (data: { name: string; type?: string }): Promise<Channel> => {
       const response = await client.post('/channels', {
         ...data,
@@ -102,6 +107,10 @@ export const api = {
     join: async (channelId: string): Promise<void> => {
       await client.post(`/channels/${channelId}/join`);
     },
+
+    leave: async (channelId: string): Promise<void> => {
+      await client.post(`/channels/${channelId}/leave`);
+    }
   },
 
   // Message operations
@@ -134,7 +143,12 @@ export const api = {
     getThreadSummary: async (messageId: string): Promise<Message['threadSummary']> => {
       const response = await client.get(`/messages/${messageId}/thread/summary`);
       return snakeToCamel(response.data);
-    }
+    },
+
+    get: async (messageId: string): Promise<Message> => {
+      const response = await client.get(`/messages/${messageId}`);
+      return snakeToCamel(response.data);
+    },
   },
 
   // Reaction operations

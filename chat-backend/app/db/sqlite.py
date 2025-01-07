@@ -5,6 +5,7 @@ import uuid
 from ..models.user import User
 from ..models.channel import Channel
 from ..models.message import Message
+from ..models.reaction import Reaction
 
 class SQLiteDB:
     def __init__(self, db_path: str = "chat.db"):
@@ -43,6 +44,21 @@ class SQLiteDB:
                     thread_id TEXT,
                     created_at TIMESTAMP DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'utc'))
                 );
+                
+                CREATE TABLE IF NOT EXISTS channel_members (
+                    channel_id TEXT REFERENCES channels(id),
+                    user_id TEXT REFERENCES users(id),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (channel_id, user_id)
+                );
+                
+                CREATE TABLE IF NOT EXISTS reactions (
+                    message_id TEXT REFERENCES messages(id),
+                    user_id TEXT REFERENCES users(id),
+                    emoji TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (message_id, user_id, emoji)
+                );
             """)
             
             # Create default channel if it doesn't exist
@@ -54,6 +70,19 @@ class SQLiteDB:
                     (channel_id,)
                 )
 
+            # Add all users to general channel
+            general = conn.execute("SELECT id FROM channels WHERE name = 'general'").fetchone()
+            if general:
+                users = conn.execute("SELECT id FROM users").fetchall()
+                for user in users:
+                    try:
+                        conn.execute(
+                            "INSERT INTO channel_members (channel_id, user_id) VALUES (?, ?)",
+                            (general['id'], user['id'])
+                        )
+                    except sqlite3.IntegrityError:
+                        pass  # User already in channel
+
     def create_user(self, email: str, name: str, password: str) -> User:
         user_id = str(uuid.uuid4())
         with self._get_connection() as conn:
@@ -61,6 +90,16 @@ class SQLiteDB:
                 "INSERT INTO users (id, email, name, password) VALUES (?, ?, ?, ?)",
                 (user_id, email, name, password)
             )
+            # Add new user to general channel
+            general = conn.execute("SELECT id FROM channels WHERE name = 'general'").fetchone()
+            if general:
+                try:
+                    conn.execute(
+                        "INSERT INTO channel_members (channel_id, user_id) VALUES (?, ?)",
+                        (general['id'], user_id)
+                    )
+                except sqlite3.IntegrityError:
+                    pass  # User already in channel
         return self.get_user_by_id(user_id)
 
     def get_user_by_email(self, email: str) -> Optional[User]:
@@ -81,9 +120,15 @@ class SQLiteDB:
 
     def get_channels_for_user(self, user_id: str) -> List[Channel]:
         with self._get_connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM channels WHERE type = 'public' ORDER BY name ASC"
-            ).fetchall()
+            rows = conn.execute("""
+                SELECT DISTINCT c.* 
+                FROM channels c
+                LEFT JOIN channel_members cm ON c.id = cm.channel_id
+                WHERE cm.user_id = ? OR c.name = 'general'
+                ORDER BY 
+                    CASE WHEN c.name = 'general' THEN 0 ELSE 1 END,
+                    c.name ASC
+            """, (user_id,)).fetchall()
             return [Channel(**dict(row)) for row in rows]
 
     def create_message(self, channel_id: str, user_id: str, content: str, thread_id: str = None) -> Message:
@@ -111,7 +156,6 @@ class SQLiteDB:
 
     def get_messages(self, channel_id: str) -> List[Message]:
         with self._get_connection() as conn:
-
             rows = conn.execute("""
                 SELECT m.*, u.name as user_name
                 FROM messages m
@@ -123,6 +167,8 @@ class SQLiteDB:
             for row in rows:
                 data = dict(row)
                 data['user'] = {'name': data.pop('user_name')}
+                # Add reactions
+                data['reactions'] = self.get_message_reactions(data['id'])
                 messages.append(Message(**data))
             return messages
 
@@ -132,13 +178,15 @@ class SQLiteDB:
                 SELECT m.*, u.name as user_name
                 FROM messages m
                 LEFT JOIN users u ON m.user_id = u.id
-                WHERE m.thread_id = ?
+                WHERE m.thread_id = ? AND m.id != ?  -- Exclude parent message
                 ORDER BY m.created_at ASC
-            """, (thread_id,)).fetchall()
+            """, (thread_id, thread_id)).fetchall()
             messages = []
             for row in rows:
                 data = dict(row)
                 data['user'] = {'name': data.pop('user_name')}
+                # Add reactions
+                data['reactions'] = self.get_message_reactions(data['id'])
                 messages.append(Message(**data))
             return messages
 
@@ -152,6 +200,8 @@ class SQLiteDB:
             """, (message_id,)).fetchone()
             data = dict(row)
             data['user'] = {'name': data.pop('user_name')}
+            # Add reactions
+            data['reactions'] = self.get_message_reactions(message_id)
             return Message(**data)
 
     def create_channel(self, name: str, type: str = 'public', created_by: str = None) -> Channel:
@@ -163,6 +213,12 @@ class SQLiteDB:
                     "INSERT INTO channels (id, name, type, created_by) VALUES (?, ?, ?, ?)",
                     (channel_id, name, type, created_by)
                 )
+                # Auto-join creator to channel
+                if created_by:
+                    conn.execute(
+                        "INSERT INTO channel_members (channel_id, user_id) VALUES (?, ?)",
+                        (channel_id, created_by)
+                    )
                 row = conn.execute(
                     "SELECT * FROM channels WHERE id = ?", 
                     (channel_id,)
@@ -170,3 +226,87 @@ class SQLiteDB:
                 return Channel(**dict(row))
             except sqlite3.IntegrityError:
                 raise ValueError(f"Channel name '{name}' already exists")
+
+    def add_channel_member(self, channel_id: str, user_id: str) -> None:
+        with self._get_connection() as conn:
+            try:
+                conn.execute(
+                    "INSERT INTO channel_members (channel_id, user_id) VALUES (?, ?)",
+                    (channel_id, user_id)
+                )
+            except sqlite3.IntegrityError:
+                raise ValueError("User is already a member of this channel")
+
+    def remove_channel_member(self, channel_id: str, user_id: str) -> None:
+        with self._get_connection() as conn:
+            result = conn.execute(
+                "DELETE FROM channel_members WHERE channel_id = ? AND user_id = ?",
+                (channel_id, user_id)
+            )
+            if result.rowcount == 0:
+                raise ValueError("User is not a member of this channel")
+
+    def get_available_channels(self, user_id: str) -> List[Channel]:
+        """Get all public channels that the user hasn't joined yet"""
+        with self._get_connection() as conn:
+            rows = conn.execute("""
+                SELECT c.* FROM channels c
+                WHERE c.type = 'public'
+                AND c.id NOT IN (
+                    SELECT channel_id 
+                    FROM channel_members 
+                    WHERE user_id = ?
+                )
+                AND c.name != 'general'
+                ORDER BY c.name ASC
+            """, (user_id,)).fetchall()
+            return [Channel(**dict(row)) for row in rows]
+
+    def add_reaction(self, message_id: str, user_id: str, emoji: str) -> Reaction:
+        with self._get_connection() as conn:
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO reactions (message_id, user_id, emoji, created_at) 
+                    VALUES (?, ?, ?, strftime('%Y-%m-%d %H:%M:%S', 'now', 'utc'))
+                    """,
+                    (message_id, user_id, emoji)
+                )
+                
+                row = conn.execute(
+                    "SELECT * FROM reactions WHERE message_id = ? AND user_id = ? AND emoji = ?",
+                    (message_id, user_id, emoji)
+                ).fetchone()
+                
+                return Reaction(**dict(row))
+                
+            except sqlite3.IntegrityError:
+                # If reaction already exists, treat it as a delete
+                self.remove_reaction(message_id, user_id, emoji)
+                raise ValueError("Reaction removed")
+
+    def remove_reaction(self, message_id: str, user_id: str, emoji: str) -> None:
+        with self._get_connection() as conn:
+            result = conn.execute(
+                """
+                DELETE FROM reactions 
+                WHERE message_id = ? AND user_id = ? AND emoji = ?
+                """,
+                (message_id, user_id, emoji)
+            )
+            if result.rowcount == 0:
+                raise ValueError("Reaction not found")
+
+    def get_message_reactions(self, message_id: str) -> dict:
+        with self._get_connection() as conn:
+            rows = conn.execute("""
+                SELECT emoji, GROUP_CONCAT(user_id) as user_ids
+                FROM reactions
+                WHERE message_id = ?
+                GROUP BY emoji
+            """, (message_id,)).fetchall()
+            
+            reactions = {}
+            for row in rows:
+                reactions[row['emoji']] = row['user_ids'].split(',')
+            return reactions

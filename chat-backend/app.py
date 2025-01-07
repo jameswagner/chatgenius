@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from datetime import datetime, timezone
@@ -6,6 +6,8 @@ from app.db.sqlite import SQLiteDB
 from app.auth.auth_service import AuthService, auth_required
 import os
 import jwt
+from werkzeug.utils import secure_filename
+from app.storage.file_storage import FileStorage
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
@@ -17,9 +19,14 @@ CORS(app, resources={
         "methods": ["GET", "POST", "OPTIONS", "DELETE"]
     }
 })
+app.static_folder = 'uploads'  # This tells Flask where to find static files
 
 db = SQLiteDB()
 auth_service = AuthService(db, app.config['SECRET_KEY'])
+
+file_storage = FileStorage()
+MAX_FILES = 3
+MAX_FILE_SIZE = 1024 * 1024  # 1MB
 
 # Auth routes
 @app.route('/auth/register', methods=['POST'])
@@ -75,7 +82,8 @@ def create_channel():
         channel = db.create_channel(
             name=data['name'],
             type=data.get('type', 'public'),
-            created_by=request.user_id
+            created_by=request.user_id,
+            other_user_id=data.get('otherUserId')  # For DM channels
         )
         return jsonify(channel.to_dict()), 201
     except ValueError as e:
@@ -91,14 +99,43 @@ def get_messages(channel_id):
 @app.route('/channels/<channel_id>/messages', methods=['POST'])
 @auth_required
 def create_message(channel_id):
-    data = request.get_json()
+    print("Received message creation request")  # Debug
+    files = request.files.getlist('files')
+    print(f"Files received: {[f.filename for f in files]}")  # Debug file list
+    
+    # Validate number of files
+    if len(files) > MAX_FILES:
+        return jsonify({'error': f'Maximum {MAX_FILES} files allowed'}), 400
+
+    # Save files
+    saved_files = []
+    try:
+        for file in files:
+            if file.filename:
+                print(f"Processing file: {file.filename}")  # Debug each file
+                filename = file_storage.save_file(file, MAX_FILE_SIZE)
+                print(f"Saved as: {filename}")  # Debug saved filename
+                saved_files.append(filename)
+    except ValueError as e:
+        print(f"Error saving files: {str(e)}")  # Debug errors
+        # Clean up any saved files
+        for filename in saved_files:
+            file_storage.delete_file(filename)
+        return jsonify({'error': str(e)}), 400
+
+    # Create message
+    data = request.form
+    print(f"Form data: {data}")  # Debug form data
     message = db.create_message(
         channel_id=channel_id,
         user_id=request.user_id,
         content=data['content'],
-        thread_id=data.get('thread_id')
+        thread_id=data.get('thread_id'),
+        attachments=saved_files
     )
+    
     message_data = message.to_dict()
+    print(f"Created message: {message_data}")  # Debug created message
     socketio.emit('message.new', message_data, room=channel_id)
     return jsonify(message_data), 201
 
@@ -225,6 +262,35 @@ def get_message(message_id):
     if not message:
         return jsonify({'error': 'Message not found'}), 404
     return jsonify(message.to_dict())
+
+@app.route('/users')
+@auth_required
+def get_users():
+    """Get all users except the current user"""
+    try:
+        users = db.get_all_users()
+        # Only return id and name
+        return jsonify([{
+            'id': user['id'],
+            'name': user['name']
+        } for user in users if user['id'] != request.user_id])  # Exclude current user
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Add this route to serve uploaded files
+@app.route('/uploads/<filename>')
+@auth_required
+def serve_file(filename):
+    """Serve uploaded files using Flask's send_static_file"""
+    print(f"[DEBUG] Serve file request received for: {filename}")  # Debug
+    print(f"[DEBUG] Static folder is: {app.static_folder}")  # Debug
+    print(f"[DEBUG] Current working directory: {os.getcwd()}")  # Debug
+    print(f"[DEBUG] Full path would be: {os.path.join(os.getcwd(), app.static_folder, filename)}")  # Debug
+    try:
+        return app.send_static_file(filename)
+    except Exception as e:
+        print(f"[DEBUG] Error serving file {filename}: {str(e)}")  # Debug
+        return jsonify({'error': 'File not found'}), 404
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=3000, debug=True) 

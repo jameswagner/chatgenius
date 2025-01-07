@@ -10,8 +10,9 @@ class Message:
     channel_id: str
     thread_id: str
     created_at: str | datetime
+    attachments: List[str] = field(default_factory=list)
     user: Optional[dict] = None
-    reactions: Dict[str, List[str]] = field(default_factory=dict)  # emoji -> list of user_ids
+    reactions: Dict[str, List[str]] = field(default_factory=dict)
 
     def to_dict(self):
         return {
@@ -23,6 +24,7 @@ class Message:
             'createdAt': (self.created_at.strftime('%Y-%m-%d %H:%M:%S') 
                          if isinstance(self.created_at, datetime) 
                          else self.created_at),
+            'attachments': self.attachments,
             'user': self.user,
             'reactions': self.reactions
         } 

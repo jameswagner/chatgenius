@@ -5,11 +5,14 @@ import { format } from 'date-fns';
 import { ThreadView } from './ThreadView';
 import { api } from '../../services/api';
 import { MessageReactions } from './MessageReactions';
+import { ChatMessage } from './ChatMessage';
 
 interface MessageListProps {
   channelId: string;
   messages: Message[];
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+  currentChannelName: string;
+  onThreadClick?: (messageId: string) => void;
 }
 
 interface ThreadGroup {
@@ -17,7 +20,9 @@ interface ThreadGroup {
   messages: Message[];
 }
 
-export const MessageList = ({ channelId, messages, setMessages }: MessageListProps) => {
+export const MessageList = ({ channelId, messages, setMessages, currentChannelName, onThreadClick }: MessageListProps) => {
+  console.log('MessageList renadering with messages:', messages); // Debug
+
   const [selectedThread, setSelectedThread] = useState<Message | null>(null);
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
   const currentUserId = localStorage.getItem('userId');
@@ -63,32 +68,17 @@ export const MessageList = ({ channelId, messages, setMessages }: MessageListPro
   };
 
   const renderMessage = (message: Message, isReply = false) => {
-    const isCurrentUser = message.userId === currentUserId;
-    
     return (
-      <div key={message.id} className="flex items-start">
-        <div className={`${isReply ? 'h-8 w-8' : 'h-10 w-10'} rounded bg-gray-300 flex-shrink-0`} />
-        <div className={`ml-3 flex-1 ${isCurrentUser ? 'bg-blue-50 p-2 rounded' : ''}`}>
-          <div className="flex items-center">
-            <span className={`font-bold ${isCurrentUser ? 'text-blue-700' : ''}`}>
-              {message.user?.name}
-            </span>
-            <span className="ml-2 text-xs text-gray-500">
-              {formatTime(message.createdAt)}
-            </span>
-          </div>
-          <p className={`${isCurrentUser ? 'text-blue-900' : 'text-gray-900'}`}>
-            {message.content}
-          </p>
-          <MessageReactions 
-            message={message} 
-            onReactionChange={() => {
-              // Refresh messages to get updated reactions
-              api.messages.list(channelId).then(setMessages);
-            }} 
-          />
-        </div>
-      </div>
+      <ChatMessage
+        key={message.id}
+        message={message}
+        isReply={isReply}
+        onReactionChange={async () => {
+          const updatedMessages = await api.messages.list(channelId);
+          setMessages(updatedMessages);
+        }}
+        onThreadClick={onThreadClick ? () => onThreadClick(message.id) : undefined}
+      />
     );
   };
 

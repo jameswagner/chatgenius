@@ -15,5 +15,19 @@ export interface Message {
   user?: {
     name: string;
   };
-  reactions?: { [emoji: string]: string[] }; // emoji -> array of userIds
+  reactions?: { [emoji: string]: string[] };
+  attachments: string[];
+  replyCount?: number;
+}
+
+export interface Channel {
+  id: string;
+  name: string;
+  type: string;
+  createdBy: string;
+  createdAt: string;
+  members: Array<{
+    id: string;
+    name: string;
+  }>;
 } 

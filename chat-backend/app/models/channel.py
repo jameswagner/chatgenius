@@ -1,5 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import List
 
 @dataclass
 class Channel:
@@ -7,7 +8,8 @@ class Channel:
     name: str
     type: str
     created_by: str
-    created_at: str | datetime  # Allow both string and datetime
+    created_at: str | datetime
+    members: List[dict] = field(default_factory=list)
 
     def to_dict(self):
         return {
@@ -17,5 +19,6 @@ class Channel:
             'createdBy': self.created_by,
             'createdAt': (self.created_at.strftime('%Y-%m-%d %H:%M:%S') 
                          if isinstance(self.created_at, datetime) 
-                         else self.created_at)
+                         else self.created_at),
+            'members': self.members
         } 

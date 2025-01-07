@@ -59,6 +59,13 @@ class SQLiteDB:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (message_id, user_id, emoji)
                 );
+                
+                CREATE TABLE IF NOT EXISTS attachments (
+                    id TEXT PRIMARY KEY,
+                    message_id TEXT REFERENCES messages(id),
+                    filename TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
             """)
             
             # Create default channel if it doesn't exist
@@ -121,19 +128,36 @@ class SQLiteDB:
     def get_channels_for_user(self, user_id: str) -> List[Channel]:
         with self._get_connection() as conn:
             rows = conn.execute("""
-                SELECT DISTINCT c.* 
+                SELECT DISTINCT c.*, 
+                       GROUP_CONCAT(DISTINCT cm2.user_id) as member_ids,
+                       GROUP_CONCAT(DISTINCT u2.name) as member_names
                 FROM channels c
                 LEFT JOIN channel_members cm ON c.id = cm.channel_id
-                WHERE cm.user_id = ? OR c.name = 'general'
-                ORDER BY 
-                    CASE WHEN c.name = 'general' THEN 0 ELSE 1 END,
-                    c.name ASC
+                LEFT JOIN channel_members cm2 ON c.id = cm2.channel_id
+                LEFT JOIN users u2 ON cm2.user_id = u2.id
+                WHERE (cm.user_id = ? OR c.name = 'general')
+                GROUP BY c.id
+                ORDER BY c.name ASC
             """, (user_id,)).fetchall()
-            return [Channel(**dict(row)) for row in rows]
+            
+            channels = []
+            for row in rows:
+                data = dict(row)
+                # Add members info
+                member_ids = data.pop('member_ids', '').split(',') if data.get('member_ids') else []
+                member_names = data.pop('member_names', '').split(',') if data.get('member_names') else []
+                data['members'] = [
+                    {'id': uid, 'name': name} 
+                    for uid, name in zip(member_ids, member_names)
+                    if uid and name  # Filter out empty values
+                ]
+                print(f"Channel {data['name']} has members: {data['members']}")  # Debug log
+                channels.append(Channel(**data))
+            return channels
 
-    def create_message(self, channel_id: str, user_id: str, content: str, thread_id: str = None) -> Message:
+    def create_message(self, channel_id: str, user_id: str, content: str, 
+                      thread_id: str = None, attachments: List[str] = None) -> Message:
         message_id = str(uuid.uuid4())
-        # If no thread_id provided, use message_id as its own thread_id
         actual_thread_id = thread_id or message_id
         
         with self._get_connection() as conn:
@@ -144,29 +168,52 @@ class SQLiteDB:
                 """,
                 (message_id, channel_id, user_id, content, actual_thread_id)
             )
+
+            # Save attachments
+            if attachments:
+                for filename in attachments:
+                    conn.execute(
+                        "INSERT INTO attachments (id, message_id, filename) VALUES (?, ?, ?)",
+                        (str(uuid.uuid4()), message_id, filename)
+                    )
+
+            # Get message with attachments
             row = conn.execute("""
-                SELECT m.*, u.name as user_name
+                SELECT m.*, u.name as user_name,
+                       GROUP_CONCAT(a.filename) as attachment_files
                 FROM messages m
                 LEFT JOIN users u ON m.user_id = u.id
+                LEFT JOIN attachments a ON m.id = a.message_id
                 WHERE m.id = ?
+                GROUP BY m.id
             """, (message_id,)).fetchone()
+            
             data = dict(row)
             data['user'] = {'name': data.pop('user_name')}
+            data['attachments'] = (data.pop('attachment_files') or '').split(',')
+            if data['attachments'] == ['']: data['attachments'] = []
+            
             return Message(**data)
 
     def get_messages(self, channel_id: str) -> List[Message]:
         with self._get_connection() as conn:
             rows = conn.execute("""
-                SELECT m.*, u.name as user_name
+                SELECT m.*, u.name as user_name,
+                       GROUP_CONCAT(a.filename) as attachment_files
                 FROM messages m
                 LEFT JOIN users u ON m.user_id = u.id
+                LEFT JOIN attachments a ON m.id = a.message_id
                 WHERE m.channel_id = ?
+                GROUP BY m.id
                 ORDER BY m.created_at ASC
             """, (channel_id,)).fetchall()
             messages = []
             for row in rows:
                 data = dict(row)
                 data['user'] = {'name': data.pop('user_name')}
+                # Add attachments
+                data['attachments'] = (data.pop('attachment_files') or '').split(',')
+                if data['attachments'] == ['']: data['attachments'] = []
                 # Add reactions
                 data['reactions'] = self.get_message_reactions(data['id'])
                 messages.append(Message(**data))
@@ -175,16 +222,22 @@ class SQLiteDB:
     def get_thread_messages(self, thread_id: str) -> List[Message]:
         with self._get_connection() as conn:
             rows = conn.execute("""
-                SELECT m.*, u.name as user_name
+                SELECT m.*, u.name as user_name,
+                       GROUP_CONCAT(a.filename) as attachment_files
                 FROM messages m
                 LEFT JOIN users u ON m.user_id = u.id
+                LEFT JOIN attachments a ON m.id = a.message_id
                 WHERE m.thread_id = ? AND m.id != ?  -- Exclude parent message
+                GROUP BY m.id
                 ORDER BY m.created_at ASC
             """, (thread_id, thread_id)).fetchall()
             messages = []
             for row in rows:
                 data = dict(row)
                 data['user'] = {'name': data.pop('user_name')}
+                # Add attachments
+                data['attachments'] = (data.pop('attachment_files') or '').split(',')
+                if data['attachments'] == ['']: data['attachments'] = []
                 # Add reactions
                 data['reactions'] = self.get_message_reactions(data['id'])
                 messages.append(Message(**data))
@@ -193,22 +246,29 @@ class SQLiteDB:
     def get_message(self, message_id: str) -> Message:
         with self._get_connection() as conn:
             row = conn.execute("""
-                SELECT m.*, u.name as user_name
+                SELECT m.*, u.name as user_name,
+                       GROUP_CONCAT(a.filename) as attachment_files
                 FROM messages m
                 LEFT JOIN users u ON m.user_id = u.id
+                LEFT JOIN attachments a ON m.id = a.message_id
                 WHERE m.id = ?
+                GROUP BY m.id
             """, (message_id,)).fetchone()
             data = dict(row)
             data['user'] = {'name': data.pop('user_name')}
+            # Add attachments
+            data['attachments'] = (data.pop('attachment_files') or '').split(',')
+            if data['attachments'] == ['']: data['attachments'] = []
             # Add reactions
             data['reactions'] = self.get_message_reactions(message_id)
             return Message(**data)
 
-    def create_channel(self, name: str, type: str = 'public', created_by: str = None) -> Channel:
+    def create_channel(self, name: str, type: str = 'public', created_by: str = None, other_user_id: str = None) -> Channel:
         channel_id = str(uuid.uuid4())
         
         with self._get_connection() as conn:
             try:
+                print(f"Creating channel with type: {type}")  # Debug log
                 conn.execute(
                     "INSERT INTO channels (id, name, type, created_by) VALUES (?, ?, ?, ?)",
                     (channel_id, name, type, created_by)
@@ -219,6 +279,14 @@ class SQLiteDB:
                         "INSERT INTO channel_members (channel_id, user_id) VALUES (?, ?)",
                         (channel_id, created_by)
                     )
+                    
+                # For DM channels, add the other user
+                if type == 'dm' and other_user_id:
+                    conn.execute(
+                        "INSERT INTO channel_members (channel_id, user_id) VALUES (?, ?)",
+                        (channel_id, other_user_id)
+                    )
+
                 row = conn.execute(
                     "SELECT * FROM channels WHERE id = ?", 
                     (channel_id,)
@@ -310,3 +378,18 @@ class SQLiteDB:
             for row in rows:
                 reactions[row['emoji']] = row['user_ids'].split(',')
             return reactions
+
+    def get_all_users(self) -> List[User]:
+        """Get all users except password field"""
+        with self._get_connection() as conn:
+            rows = conn.execute("""
+                SELECT id, name, email, created_at 
+                FROM users 
+                ORDER BY name ASC
+            """).fetchall()
+            return [{
+                'id': row['id'],
+                'name': row['name'],
+                'email': row['email'],
+                'created_at': row['created_at']
+            } for row in rows]

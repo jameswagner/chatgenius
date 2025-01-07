@@ -96,10 +96,12 @@ export const api = {
       return snakeToCamel(response.data);
     },
 
-    create: async (data: { name: string; type?: string }): Promise<Channel> => {
+    create: async (data: { name: string; type?: string; otherUserId?: string }): Promise<Channel> => {
+      console.log('Creating channel with data:', data); // Debug log
       const response = await client.post('/channels', {
-        ...data,
-        type: 'public'
+        name: data.name,
+        type: data.type || 'public',  // Make sure we're sending the type
+        otherUserId: data.otherUserId
       });
       return snakeToCamel(response.data);
     },
@@ -120,8 +122,17 @@ export const api = {
       return snakeToCamel(response.data);
     },
 
-    create: async (channelId: string, data: { content: string; threadId?: string }): Promise<Message> => {
-      const response = await client.post(`/channels/${channelId}/messages`, data);
+    create: async (channelId: string, data: FormData | { content: string; threadId?: string }): Promise<Message> => {
+      const response = await client.post(
+        `/channels/${channelId}/messages`,
+        data,
+        // Add this config when data is FormData
+        data instanceof FormData ? {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        } : undefined
+      );
       return snakeToCamel(response.data);
     },
 
@@ -160,6 +171,14 @@ export const api = {
 
     remove: async (messageId: string, emoji: string): Promise<void> => {
       await client.delete(`/messages/${messageId}/reactions/${emoji}`);
+    },
+  },
+
+  // Add to existing api object
+  users: {
+    list: async () => {
+      const response = await client.get('/users');
+      return snakeToCamel(response.data);
     },
   },
 };

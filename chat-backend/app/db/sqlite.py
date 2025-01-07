@@ -44,7 +44,7 @@ class SQLiteDB:
                     user_id TEXT REFERENCES users(id),
                     content TEXT,
                     thread_id TEXT,
-                    created_at TIMESTAMP DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'utc'))
+                    created_at TIMESTAMP DEFAULT (datetime('now'))
                 );
                 
                 CREATE TABLE IF NOT EXISTS channel_members (
@@ -162,14 +162,24 @@ class SQLiteDB:
         message_id = str(uuid.uuid4())
         actual_thread_id = thread_id or message_id
         
+        current_utc = datetime.now(timezone.utc)
+        print(f"[TIMESTAMP] DB 1. Current UTC time: {current_utc.isoformat()}")
+        
         with self._get_connection() as conn:
             conn.execute(
                 """
                 INSERT INTO messages (id, channel_id, user_id, content, thread_id, created_at) 
-                VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%S', 'now', 'utc'))
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
                 """,
                 (message_id, channel_id, user_id, content, actual_thread_id)
             )
+            
+            # Get the inserted timestamp
+            row = conn.execute(
+                "SELECT created_at FROM messages WHERE id = ?", 
+                (message_id,)
+            ).fetchone()
+            print(f"[TIMESTAMP] DB 2. SQLite stored timestamp: {row['created_at']}")
 
             # Save attachments
             if attachments:

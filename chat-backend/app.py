@@ -117,6 +117,8 @@ def get_messages(channel_id):
 @app.route('/channels/<channel_id>/messages', methods=['POST'])
 @auth_required
 def create_message(channel_id):
+    print("[TIMESTAMP] 1. Message creation request received")
+    
     print("Received message creation request")  # Debug
     files = request.files.getlist('files')
     print(f"Files received: {[f.filename for f in files]}")  # Debug file list
@@ -143,7 +145,12 @@ def create_message(channel_id):
 
     # Create message
     data = request.form
-    print(f"Form data: {data}")  # Debug form data
+    print(f"[TIMESTAMP] 2. Form data: {data}")
+    
+    # Get current UTC time for comparison
+    current_utc = datetime.now(timezone.utc)
+    print(f"[TIMESTAMP] 3. Current UTC time: {current_utc.isoformat()}")
+    
     message = db.create_message(
         channel_id=channel_id,
         user_id=request.user_id,
@@ -153,7 +160,7 @@ def create_message(channel_id):
     )
     
     message_data = message.to_dict()
-    print(f"Created message: {message_data}")  # Debug created message
+    print(f"[TIMESTAMP] 4. Created message timestamp: {message_data['createdAt']}")
     socketio.emit('message.new', message_data, room=channel_id)
     return jsonify(message_data), 201
 

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Message } from '../../types/chat';
 import { formatInTimeZone } from 'date-fns-tz';
 import { format } from 'date-fns';
 import { ThreadView } from './ThreadView';
+import { api } from '../../services/api';
 
 interface MessageListProps {
   channelId: string;
@@ -32,11 +33,6 @@ export const MessageList = ({ channelId, messages, setMessages }: MessageListPro
     const date = new Date(dateString);
 
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    console.log('Converting UTC to local:', {
-      utc: dateString,
-      localDate: date,
-      timeZone: timeZone,
-    });
     
     // Format in local timezone
     const formatted = format(date, 'h:mm a');
@@ -97,6 +93,18 @@ export const MessageList = ({ channelId, messages, setMessages }: MessageListPro
       </div>
     );
   };
+
+  useEffect(() => {
+    const fetchMessages = async () => {
+      try {
+        const data = await api.messages.list(channelId);
+        setMessages(data);
+      } catch (err) {
+        console.error('Failed to fetch messages:', err);
+      }
+    };
+    fetchMessages();
+  }, [channelId]);
 
   return (
     <div className="flex h-full">

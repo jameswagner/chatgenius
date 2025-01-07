@@ -1,12 +1,15 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_socketio import SocketIO, emit, join_room, leave_room
 from datetime import datetime, timezone
 from app.db.sqlite import SQLiteDB
 from app.auth.auth_service import AuthService, auth_required
 import os
+import jwt
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
+socketio = SocketIO(app, cors_allowed_origins="http://localhost:5173")
 CORS(app, resources={
     r"/*": {
         "origins": ["http://localhost:5173"],
@@ -95,7 +98,9 @@ def create_message(channel_id):
         content=data['content'],
         thread_id=data.get('thread_id')
     )
-    return jsonify(message.to_dict()), 201
+    message_data = message.to_dict()
+    socketio.emit('message.new', message_data, room=channel_id)
+    return jsonify(message_data), 201
 
 # Thread routes
 @app.route('/messages/<message_id>/thread')
@@ -121,5 +126,35 @@ def create_thread_reply(message_id):
     )
     return jsonify(message.to_dict()), 201
 
+# WebSocket event handlers
+@socketio.on('connect')
+def handle_connect():
+    try:
+        # Get token from request header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            raise ConnectionRefusedError('Authentication required')
+            
+        token = auth_header.split(' ')[1]
+        payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        request.user_id = payload['sub']
+        print(f'Client connected: {request.user_id}')
+    except Exception as e:
+        raise ConnectionRefusedError(str(e))
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Client disconnected')
+
+@socketio.on('channel.join')
+def handle_join_channel(channel_id):
+    join_room(channel_id)
+    print(f'Client joined channel: {channel_id}')
+
+@socketio.on('channel.leave')
+def handle_leave_channel(channel_id):
+    leave_room(channel_id)
+    print(f'Client left channel: {channel_id}')
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3000, debug=True) 
+    socketio.run(app, host='0.0.0.0', port=3000, debug=True) 

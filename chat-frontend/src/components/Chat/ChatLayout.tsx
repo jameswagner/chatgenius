@@ -3,6 +3,7 @@ import { Sidebar } from '../Layout/Sidebar';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { api } from '../../services/api';
+import { socketService } from '../../services/socket';
 import { Message } from '../../types/chat';
 import { useNavigate } from 'react-router-dom';
 
@@ -11,7 +12,31 @@ export const ChatLayout = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const navigate = useNavigate();
 
-  // Fetch messages when channel changes
+  // Connect to WebSocket when component mounts
+  useEffect(() => {
+    socketService.connect();
+    return () => socketService.disconnect();
+  }, []);
+
+  // Join channel and listen for messages
+  useEffect(() => {
+    socketService.joinChannel(currentChannel);
+    
+    const handleNewMessage = (message: Message) => {
+      if (message.channelId === currentChannel) {
+        setMessages(prev => [...prev, message]);
+      }
+    };
+
+    socketService.onNewMessage(handleNewMessage);
+
+    return () => {
+      socketService.leaveChannel(currentChannel);
+      socketService.offNewMessage(handleNewMessage);
+    };
+  }, [currentChannel]);
+
+  // Initial messages load
   useEffect(() => {
     const fetchMessages = async () => {
       try {
@@ -22,19 +47,11 @@ export const ChatLayout = () => {
       }
     };
     fetchMessages();
-
-    // Set up polling for new messages
-    const interval = setInterval(fetchMessages, 3000);
-    return () => clearInterval(interval);
   }, [currentChannel]);
 
   const handleSendMessage = async (content: string, threadId?: string) => {
     try {
-      const message = await api.messages.create(currentChannel, { 
-        content,
-        threadId 
-      });
-      setMessages(prev => [...prev, message]);
+      await api.messages.create(currentChannel, { content, threadId });
     } catch (error) {
       console.error('Failed to send message:', error);
     }
@@ -48,15 +65,18 @@ export const ChatLayout = () => {
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('userId');
-    navigate('/auth');
+    navigate('/login');
   };
 
   return (
     <div className="flex h-screen">
-      <Sidebar onChannelSelect={handleChannelSelect} />
+      <Sidebar 
+        currentChannel={currentChannel}
+        onChannelSelect={handleChannelSelect}
+      />
       <div className="flex-1 flex flex-col">
-        <div className="h-12 flex items-center justify-between px-6 border-b border-gray-200">
-          <h2 className="font-bold"># {currentChannel}</h2>
+        <div className="p-4 border-b flex justify-between items-center">
+          <h2 className="text-xl font-bold">#{currentChannel}</h2>
           <button
             onClick={handleLogout}
             className="text-gray-600 hover:text-gray-900"

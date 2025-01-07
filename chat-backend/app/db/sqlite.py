@@ -25,6 +25,8 @@ class SQLiteDB:
                     email TEXT UNIQUE,
                     name TEXT,
                     password TEXT,
+                    status TEXT DEFAULT 'offline' CHECK(status IN ('online', 'away', 'busy', 'offline')),
+                    last_active TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 
@@ -198,7 +200,7 @@ class SQLiteDB:
     def get_messages(self, channel_id: str) -> List[Message]:
         with self._get_connection() as conn:
             rows = conn.execute("""
-                SELECT m.*, u.name as user_name,
+                SELECT m.*, u.name as user_name, u.status as user_status,
                        GROUP_CONCAT(a.filename) as attachment_files
                 FROM messages m
                 LEFT JOIN users u ON m.user_id = u.id
@@ -210,7 +212,10 @@ class SQLiteDB:
             messages = []
             for row in rows:
                 data = dict(row)
-                data['user'] = {'name': data.pop('user_name')}
+                data['user'] = {
+                    'name': data.pop('user_name'),
+                    'status': data.pop('user_status', 'offline')
+                }
                 # Add attachments
                 data['attachments'] = (data.pop('attachment_files') or '').split(',')
                 if data['attachments'] == ['']: data['attachments'] = []
@@ -222,19 +227,22 @@ class SQLiteDB:
     def get_thread_messages(self, thread_id: str) -> List[Message]:
         with self._get_connection() as conn:
             rows = conn.execute("""
-                SELECT m.*, u.name as user_name,
+                SELECT m.*, u.name as user_name, u.status as user_status,
                        GROUP_CONCAT(a.filename) as attachment_files
                 FROM messages m
                 LEFT JOIN users u ON m.user_id = u.id
                 LEFT JOIN attachments a ON m.id = a.message_id
-                WHERE m.thread_id = ? AND m.id != ?  -- Exclude parent message
+                WHERE m.thread_id = ? AND m.id != ?
                 GROUP BY m.id
                 ORDER BY m.created_at ASC
             """, (thread_id, thread_id)).fetchall()
             messages = []
             for row in rows:
                 data = dict(row)
-                data['user'] = {'name': data.pop('user_name')}
+                data['user'] = {
+                    'name': data.pop('user_name'),
+                    'status': data.pop('user_status', 'offline')
+                }
                 # Add attachments
                 data['attachments'] = (data.pop('attachment_files') or '').split(',')
                 if data['attachments'] == ['']: data['attachments'] = []
@@ -246,7 +254,7 @@ class SQLiteDB:
     def get_message(self, message_id: str) -> Message:
         with self._get_connection() as conn:
             row = conn.execute("""
-                SELECT m.*, u.name as user_name,
+                SELECT m.*, u.name as user_name, u.status as user_status,
                        GROUP_CONCAT(a.filename) as attachment_files
                 FROM messages m
                 LEFT JOIN users u ON m.user_id = u.id
@@ -255,7 +263,10 @@ class SQLiteDB:
                 GROUP BY m.id
             """, (message_id,)).fetchone()
             data = dict(row)
-            data['user'] = {'name': data.pop('user_name')}
+            data['user'] = {
+                'name': data.pop('user_name'),
+                'status': data.pop('user_status', 'offline')
+            }
             # Add attachments
             data['attachments'] = (data.pop('attachment_files') or '').split(',')
             if data['attachments'] == ['']: data['attachments'] = []
@@ -393,3 +404,29 @@ class SQLiteDB:
                 'email': row['email'],
                 'created_at': row['created_at']
             } for row in rows]
+
+    def update_user_status(self, user_id: str, status: str) -> Optional[User]:
+        """Update a user's status and last_active timestamp"""
+        print(f"[DB] 1. Updating status for {user_id} to {status}")  # Debug log
+        with self._get_connection() as conn:
+            conn.execute("""
+                UPDATE users 
+                SET status = ?, 
+                    last_active = strftime('%Y-%m-%d %H:%M:%S', 'now', 'utc')
+                WHERE id = ?
+            """, (status, user_id))
+            
+            # Verify the update
+            row = conn.execute("SELECT status FROM users WHERE id = ?", (user_id,)).fetchone()
+            print(f"[DB] 2. Status after update: {row['status'] if row else 'No user found'}")  # Debug log
+            
+            return self.get_user_by_id(user_id)
+
+    def get_user_status(self, user_id: str) -> Optional[str]:
+        """Get a user's current status"""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT status FROM users WHERE id = ?",
+                (user_id,)
+            ).fetchone()
+            return row['status'] if row else None

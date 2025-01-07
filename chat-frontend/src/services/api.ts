@@ -82,6 +82,9 @@ export const api = {
       });
       return response.data;
     },
+    logout: async (): Promise<void> => {
+      await client.post('/auth/logout');
+    },
   },
 
   // Channel operations
@@ -178,6 +181,17 @@ export const api = {
   users: {
     list: async () => {
       const response = await client.get('/users');
+      return snakeToCamel(response.data);
+    },
+    updateStatus: async (status: string): Promise<void> => {
+      await client.put('/users/status', { status });
+    },
+    getOnline: async () => {
+      const response = await client.get('/users/online');
+      return snakeToCamel(response.data);
+    },
+    getCurrentUser: async () => {
+      const response = await client.get('/users/me');
       return snakeToCamel(response.data);
     },
   },

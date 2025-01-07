@@ -6,6 +6,7 @@ import { api } from '../../services/api';
 import { socketService } from '../../services/socket';
 import { Message } from '../../types/chat';
 import { useNavigate } from 'react-router-dom';
+import { StatusSelector } from './StatusSelector';
 
 export const ChatLayout = () => {
   const [currentChannel, setCurrentChannel] = useState<string>('general');
@@ -80,6 +81,33 @@ export const ChatLayout = () => {
     fetchMessages();
   }, [currentChannel]);
 
+  // Update status listener to immediately update message states
+  useEffect(() => {
+    socketService.on('user.status', (data: { userId: string; status: string }) => {
+      console.log('Received status update:', data);  // Debug log
+      setMessages(prevMessages => {
+        console.log('Current messages:', prevMessages);  // Debug log
+        return prevMessages.map(msg => {
+          if (msg.userId === data.userId) {
+            console.log('Updating message for user:', msg.userId, 'new status:', data.status);  // Debug log
+            return {
+              ...msg,
+              user: {
+                ...msg.user,
+                status: data.status
+              }
+            };
+          }
+          return msg;
+        });
+      });
+    });
+
+    return () => {
+      socketService.off('user.status', () => {});
+    };
+  }, []);
+
   const handleSendMessage = async (content: string, files: File[], threadId?: string) => {
     try {
       const formData = new FormData();
@@ -111,10 +139,16 @@ export const ChatLayout = () => {
     setMessages([]);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('userId');
-    navigate('/login');
+  const handleLogout = async () => {
+    try {
+      await api.auth.logout();
+    } catch (error) {
+      console.error('Error during logout:', error);
+    } finally {
+      localStorage.removeItem('token');
+      localStorage.removeItem('userId');
+      navigate('/auth');
+    }
   };
 
   return (
@@ -124,16 +158,19 @@ export const ChatLayout = () => {
         onChannelSelect={handleChannelSelect}
       />
       <div className="flex-1 flex flex-col">
-        <div className="p-4 border-b flex justify-between items-center">
+        <div className="p-4 border-b flex justify-between items-center bg-white">
           <h2 className="text-xl font-bold">
             {currentChannelType !== 'dm' ? `#${currentChannelName}` : currentChannelName}
           </h2>
-          <button
-            onClick={handleLogout}
-            className="text-gray-600 hover:text-gray-900"
-          >
-            Logout
-          </button>
+          <div className="flex items-center gap-4">
+            <StatusSelector />
+            <button
+              onClick={handleLogout}
+              className="text-gray-600 hover:text-gray-900"
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         <MessageList 

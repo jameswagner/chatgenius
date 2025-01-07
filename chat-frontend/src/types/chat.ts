@@ -5,6 +5,13 @@ export interface Reaction {
   createdAt: string;
 }
 
+export interface User {
+  id: string;
+  name: string;
+  status: 'online' | 'away' | 'busy' | 'offline';
+  lastActive?: string;
+}
+
 export interface Message {
   id: string;
   content: string;
@@ -12,9 +19,7 @@ export interface Message {
   channelId: string;
   threadId?: string;
   createdAt: string;
-  user?: {
-    name: string;
-  };
+  user?: User;
   reactions?: { [emoji: string]: string[] };
   attachments: string[];
   replyCount?: number;

@@ -37,12 +37,15 @@ class AuthService:
             'user_id': user.id
         }
 
-    def login(self, email, password):
+    def login(self, email: str, password: str):
+        """Login a user and return a token"""
         user = self.db.get_user_by_email(email)
-        
         if not user or not check_password_hash(user.password, password):
             raise ValueError('Invalid email or password')
             
+        # Set user status to online on login
+        user = self.db.update_user_status(user.id, 'online')
+        
         token = self.create_token(user.id)
         return {
             'token': token,

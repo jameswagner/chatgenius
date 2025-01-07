@@ -16,7 +16,7 @@ CORS(app, resources={
     r"/*": {
         "origins": ["http://localhost:5173"],
         "allow_headers": ["Content-Type", "Authorization"],
-        "methods": ["GET", "POST", "OPTIONS", "DELETE"]
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     }
 })
 app.static_folder = 'uploads'  # This tells Flask where to find static files
@@ -66,6 +66,24 @@ def login():
         return jsonify(result)
     except ValueError as e:
         return jsonify({'error': str(e)}), 401
+
+@app.route('/auth/logout', methods=['POST'])
+@auth_required
+def logout():
+    try:
+        # Set user status to offline on logout
+        db.update_user_status(request.user_id, 'offline')
+        
+        # Emit status change to all connected clients
+        socketio.emit('user.status', {
+            'userId': request.user_id,
+            'status': 'offline',
+            'lastActive': datetime.now(timezone.utc).isoformat()
+        })
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Channel routes
 @app.route('/channels')
@@ -172,16 +190,31 @@ def create_thread_reply(message_id):
 @socketio.on('connect')
 def handle_connect():
     try:
-        # Get token from request header
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
             raise ConnectionRefusedError('Authentication required')
             
         token = auth_header.split(' ')[1]
         payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-        request.user_id = payload['sub']
-        print(f'Client connected: {request.user_id}')
+        user_id = payload['sub']
+        
+        # Store user_id in session for later use
+        request.user_id = user_id
+        print(f'Client connected: {user_id}')  # Debug log
+        
+        # Get and broadcast current user status
+        user = db.get_user_by_id(user_id)
+        if user:
+            status_update = {
+                'userId': user.id,
+                'status': user.status,
+                'lastActive': user.to_dict()['lastActive']
+            }
+            print(f"Broadcasting initial status: {status_update}")  # Debug log
+            socketio.emit('user.status', status_update)
+            
     except Exception as e:
+        print(f"Connection error: {str(e)}")  # Debug log
         raise ConnectionRefusedError(str(e))
 
 @socketio.on('disconnect')
@@ -291,6 +324,54 @@ def serve_file(filename):
     except Exception as e:
         print(f"[DEBUG] Error serving file {filename}: {str(e)}")  # Debug
         return jsonify({'error': 'File not found'}), 404
+
+# Add the new status endpoint
+@app.route('/users/status', methods=['PUT'])
+@auth_required
+def update_status():
+    """Update the current user's status"""
+    data = request.get_json()
+    print(f"[STATUS] 1. Request received with data: {data}")
+    
+    if 'status' not in data:
+        return jsonify({'error': 'Status is required'}), 400
+        
+    valid_statuses = ['online', 'away', 'busy', 'offline']
+    if data['status'] not in valid_statuses:
+        return jsonify({'error': f'Invalid status. Must be one of: {", ".join(valid_statuses)}'}), 400
+    
+    try:
+        print(f"[STATUS] 2. Updating user {request.user_id} to status: {data['status']}")
+        user = db.update_user_status(request.user_id, data['status'])
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+
+        print(f"[STATUS] 3. User object after update: {user.to_dict()}")
+        user_dict = user.to_dict()
+        
+        # Use the requested status directly, not the one from the user object
+        status_update = {
+            'userId': user.id,
+            'status': data['status'],  # This is the key change
+            'lastActive': user_dict['lastActive']
+        }
+        
+        print(f"[STATUS] 4. Emitting status update: {status_update}")
+        socketio.emit('user.status', status_update)
+        
+        return jsonify(user_dict)
+    except Exception as e:
+        print(f"[STATUS] ERROR: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/users/me')
+@auth_required
+def get_current_user():
+    """Get current user's data"""
+    user = db.get_user_by_id(request.user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    return jsonify(user.to_dict())
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=3000, debug=True) 

@@ -80,6 +80,7 @@ export const api = {
         email, 
         password 
       });
+      console.log(response);
       return response.data;
     },
     logout: async (): Promise<void> => {

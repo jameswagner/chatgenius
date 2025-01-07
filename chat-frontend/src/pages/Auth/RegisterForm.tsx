@@ -14,7 +14,7 @@ export const RegisterForm = () => {
     try {
       const response = await api.auth.register(name, email, password);
       localStorage.setItem('token', response.token);
-      localStorage.setItem('userId', response.user.id);
+      localStorage.setItem('userId', response.user_id);
       navigate('/chat');
     } catch (err) {
       setError('Registration failed. Please try again.');

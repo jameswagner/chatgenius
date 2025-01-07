@@ -64,6 +64,20 @@ def get_channels():
     channels = db.get_channels_for_user(request.user_id)
     return jsonify([channel.to_dict() for channel in channels])
 
+@app.route('/channels', methods=['POST'])
+@auth_required
+def create_channel():
+    data = request.get_json()
+    try:
+        channel = db.create_channel(
+            name=data['name'],
+            type=data.get('type', 'public'),
+            created_by=request.user_id
+        )
+        return jsonify(channel.to_dict()), 201
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
 # Message routes
 @app.route('/channels/<channel_id>/messages')
 @auth_required
@@ -94,8 +108,13 @@ def get_thread_messages(message_id):
 @auth_required
 def create_thread_reply(message_id):
     data = request.get_json()
+    # Get the parent message to get its channel_id
+    parent_message = db.get_message(message_id)
+    if not parent_message:
+        return jsonify({'error': 'Parent message not found'}), 404
+        
     message = db.create_message(
-        channel_id=data['channel_id'],
+        channel_id=parent_message.channel_id,  # Use parent message's channel_id
         user_id=request.user_id,
         content=data['content'],
         thread_id=message_id

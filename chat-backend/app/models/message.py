@@ -8,7 +8,7 @@ class Message:
     user_id: str
     channel_id: str
     thread_id: str
-    created_at: datetime
+    created_at: str  # Just a string
     user: dict | None = None
 
     def to_dict(self):
@@ -18,6 +18,6 @@ class Message:
             'userId': self.user_id,
             'channelId': self.channel_id,
             'threadId': self.thread_id,
-            'createdAt': self.created_at.strftime('%Y-%m-%dT%H:%M:%S.%fZ') if isinstance(self.created_at, datetime) else self.created_at,
+            'createdAt': self.created_at,  # Pass through the UTC string
             'user': self.user
         } 

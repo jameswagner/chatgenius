@@ -38,7 +38,19 @@ export const ThreadView = ({ parentMessage, onClose }: ThreadViewProps) => {
   };
 
   const formatTime = (dateString: string) => {
-    return format(new Date(dateString), 'h:mm a');
+    const date = new Date(dateString);
+    
+    // Format in local timezone
+    const formatted = format(date, 'h:mm a');
+    
+    // Check if date is before today
+    const today = new Date();
+    if (date.toDateString() < today.toDateString()) {
+      const dateFormatted = format(date, 'MMM d');
+      return `${dateFormatted} ${formatted}`;
+    }
+    
+    return formatted;
   };
 
   return (

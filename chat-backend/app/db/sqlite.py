@@ -1,6 +1,6 @@
 import sqlite3
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 from ..models.user import User
 from ..models.channel import Channel
@@ -41,7 +41,7 @@ class SQLiteDB:
                     user_id TEXT REFERENCES users(id),
                     content TEXT,
                     thread_id TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'utc'))
                 );
             """)
             
@@ -86,18 +86,21 @@ class SQLiteDB:
             ).fetchall()
             return [Channel(**dict(row)) for row in rows]
 
-    def create_message(self, channel_id: str, user_id: str, content: str, thread_id: Optional[str] = None) -> Message:
+    def create_message(self, channel_id: str, user_id: str, content: str, thread_id: str = None) -> Message:
         message_id = str(uuid.uuid4())
-        # If no thread_id provided, message starts its own thread
+        # If no thread_id provided, use message_id as its own thread_id
         actual_thread_id = thread_id or message_id
         
         with self._get_connection() as conn:
             conn.execute(
-                "INSERT INTO messages (id, channel_id, user_id, content, thread_id) VALUES (?, ?, ?, ?, ?)",
+                """
+                INSERT INTO messages (id, channel_id, user_id, content, thread_id, created_at) 
+                VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%S', 'now', 'utc'))
+                """,
                 (message_id, channel_id, user_id, content, actual_thread_id)
             )
             row = conn.execute("""
-                SELECT m.*, u.name as user_name 
+                SELECT m.*, u.name as user_name
                 FROM messages m
                 LEFT JOIN users u ON m.user_id = u.id
                 WHERE m.id = ?
@@ -108,18 +111,13 @@ class SQLiteDB:
 
     def get_messages(self, channel_id: str) -> List[Message]:
         with self._get_connection() as conn:
+
             rows = conn.execute("""
-                WITH ThreadInfo AS (
-                    SELECT thread_id, MIN(created_at) as thread_created_at
-                    FROM messages 
-                    GROUP BY thread_id
-                )
                 SELECT m.*, u.name as user_name
                 FROM messages m
                 LEFT JOIN users u ON m.user_id = u.id
-                LEFT JOIN ThreadInfo t ON m.thread_id = t.thread_id
                 WHERE m.channel_id = ?
-                ORDER BY t.thread_created_at ASC, m.created_at ASC
+                ORDER BY m.created_at ASC
             """, (channel_id,)).fetchall()
             messages = []
             for row in rows:
@@ -143,3 +141,32 @@ class SQLiteDB:
                 data['user'] = {'name': data.pop('user_name')}
                 messages.append(Message(**data))
             return messages
+
+    def get_message(self, message_id: str) -> Message:
+        with self._get_connection() as conn:
+            row = conn.execute("""
+                SELECT m.*, u.name as user_name
+                FROM messages m
+                LEFT JOIN users u ON m.user_id = u.id
+                WHERE m.id = ?
+            """, (message_id,)).fetchone()
+            data = dict(row)
+            data['user'] = {'name': data.pop('user_name')}
+            return Message(**data)
+
+    def create_channel(self, name: str, type: str = 'public', created_by: str = None) -> Channel:
+        channel_id = str(uuid.uuid4())
+        
+        with self._get_connection() as conn:
+            try:
+                conn.execute(
+                    "INSERT INTO channels (id, name, type, created_by) VALUES (?, ?, ?, ?)",
+                    (channel_id, name, type, created_by)
+                )
+                row = conn.execute(
+                    "SELECT * FROM channels WHERE id = ?", 
+                    (channel_id,)
+                ).fetchone()
+                return Channel(**dict(row))
+            except sqlite3.IntegrityError:
+                raise ValueError(f"Channel name '{name}' already exists")

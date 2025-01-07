@@ -1,5 +1,8 @@
+import { useState } from 'react';
 import { Message } from '../../types/chat';
+import { formatInTimeZone } from 'date-fns-tz';
 import { format } from 'date-fns';
+import { ThreadView } from './ThreadView';
 
 interface MessageListProps {
   channelId: string;
@@ -13,6 +16,8 @@ interface ThreadGroup {
 }
 
 export const MessageList = ({ channelId, messages, setMessages }: MessageListProps) => {
+  const [selectedThread, setSelectedThread] = useState<Message | null>(null);
+
   const threadGroups = messages.reduce((groups: ThreadGroup[], message) => {
     const group = groups.find(g => g.threadId === message.threadId);
     if (group) {
@@ -24,7 +29,26 @@ export const MessageList = ({ channelId, messages, setMessages }: MessageListPro
   }, []);
 
   const formatTime = (dateString: string) => {
-    return format(new Date(dateString), 'h:mm a');
+    const date = new Date(dateString);
+
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    console.log('Converting UTC to local:', {
+      utc: dateString,
+      localDate: date,
+      timeZone: timeZone,
+    });
+    
+    // Format in local timezone
+    const formatted = format(date, 'h:mm a');
+    
+    // Check if date is before today
+    const today = new Date();
+    if (date.toDateString() < today.toDateString()) {
+      const dateFormatted = format(date, 'MMM d');
+      return `${dateFormatted} ${formatted}`;
+    }
+    
+    return formatted;
   };
 
   const renderThread = (thread: ThreadGroup) => {
@@ -34,7 +58,7 @@ export const MessageList = ({ channelId, messages, setMessages }: MessageListPro
         {/* First message */}
         <div className="flex items-start">
           <div className="h-10 w-10 rounded bg-gray-300 flex-shrink-0" />
-          <div className="ml-3">
+          <div className="ml-3 flex-1">
             <div className="flex items-center">
               <span className="font-bold">{firstMessage.user?.name}</span>
               <span className="ml-2 text-xs text-gray-500">
@@ -42,6 +66,12 @@ export const MessageList = ({ channelId, messages, setMessages }: MessageListPro
               </span>
             </div>
             <p className="text-gray-900">{firstMessage.content}</p>
+            <button 
+              onClick={() => setSelectedThread(firstMessage)}
+              className="mt-1 text-sm text-blue-500 hover:text-blue-700"
+            >
+              {replies.length > 0 ? `${replies.length} replies` : 'Reply in thread'}
+            </button>
           </div>
         </div>
 
@@ -69,8 +99,17 @@ export const MessageList = ({ channelId, messages, setMessages }: MessageListPro
   };
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-4">
-      {threadGroups.map(renderThread)}
+    <div className="flex h-full">
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        {threadGroups.map(renderThread)}
+      </div>
+      
+      {selectedThread && (
+        <ThreadView 
+          parentMessage={selectedThread}
+          onClose={() => setSelectedThread(null)}
+        />
+      )}
     </div>
   );
 }; 

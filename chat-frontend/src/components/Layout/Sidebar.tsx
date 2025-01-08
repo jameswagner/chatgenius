@@ -4,12 +4,13 @@ import { api } from '../../services/api';
 import { UserSelector } from '../Chat/UserSelector';
 import { socketService } from '../../services/socket';
 
-interface SidebarProps {
+export interface SidebarProps {
   currentChannel: string;
   onChannelSelect: (channelId: string, channelName: string, isDirectMessage: boolean) => void;
+  channels: Channel[];
 }
 
-export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
+export const Sidebar = ({ currentChannel, onChannelSelect, channels }: SidebarProps) => {
   const currentUserId = localStorage.getItem('userId');
   const [joinedChannels, setJoinedChannels] = useState<Channel[]>([]);
   const [availableChannels, setAvailableChannels] = useState<Channel[]>([]);

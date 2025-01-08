@@ -8,7 +8,7 @@ export interface Reaction {
 export interface User {
   id: string;
   name: string;
-  status: 'online' | 'away' | 'busy' | 'offline';
+  status?: string;
   lastActive?: string;
 }
 
@@ -19,20 +19,17 @@ export interface Message {
   channelId: string;
   threadId?: string;
   createdAt: string;
-  user?: User;
   reactions?: { [emoji: string]: string[] };
   attachments: string[];
   replyCount?: number;
+  user?: User;
 }
 
 export interface Channel {
   id: string;
   name: string;
   type: string;
-  createdBy: string;
-  createdAt: string;
-  members: Array<{
-    id: string;
-    name: string;
-  }>;
+  members?: User[];
+  created_by?: string;
+  created_at?: string;
 } 

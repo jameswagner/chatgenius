@@ -27,9 +27,9 @@ const getChannelDisplayName = (channel: Channel, isDm: boolean) => {
 };
 
 export const ChatLayout = () => {
-  const [currentChannel, setCurrentChannel] = useState<string | null>(null);
-  const [currentChannelName, setCurrentChannelName] = useState<string>('');
-  const [currentChannelType, setCurrentChannelType] = useState<string>('public');
+  const [currentChannel, setCurrentChannel] = useState<string | null>(() => localStorage.getItem('currentChannel'));
+  const [currentChannelName, setCurrentChannelName] = useState<string>(() => localStorage.getItem('currentChannelName') || '');
+  const [currentChannelType, setCurrentChannelType] = useState<string>(() => localStorage.getItem('currentChannelType') || 'public');
   const [messages, setMessages] = useState<Message[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [searchResults, setSearchResults] = useState<Message[]>([]);
@@ -43,7 +43,7 @@ export const ChatLayout = () => {
     socketService.connect();
 
     // Listen for new channels
-    socketService.on('channel.new', (channel) => {
+    socketService.on('channel.new', (channel: Channel) => {
       if (!channel) return; // Guard against undefined channel
 
       setChannels(prevChannels => {
@@ -62,7 +62,7 @@ export const ChatLayout = () => {
     socketService.on('user.status', (data: { userId: string; status: string }) => {
       setMessages(prevMessages => 
         prevMessages.map(msg => {
-          if (msg.userId === data.userId) {
+          if (msg.userId === data.userId && msg.user) {
             return {
               ...msg,
               user: {
@@ -137,7 +137,9 @@ export const ChatLayout = () => {
       const fetchMessages = async () => {
         try {
           const data = await api.messages.list(currentChannel);
-          setMessages(data);
+          if (Array.isArray(data)) {
+            setMessages(data);
+          }
         } catch (err) {
           console.error('Failed to fetch messages:', err);
         }
@@ -147,6 +149,8 @@ export const ChatLayout = () => {
   }, [currentChannel]);
 
   const handleSendMessage = async (content: string, files: File[], threadId?: string) => {
+    if (!currentChannel) return;
+    
     try {
       const formData = new FormData();
       formData.append('content', content);
@@ -175,6 +179,11 @@ export const ChatLayout = () => {
     setCurrentChannelName(channelName);
     setCurrentChannelType(isDirectMessage ? 'dm' : 'public');
     setMessages([]);
+
+    // Persist channel selection
+    localStorage.setItem('currentChannel', channelId);
+    localStorage.setItem('currentChannelName', channelName);
+    localStorage.setItem('currentChannelType', isDirectMessage ? 'dm' : 'public');
   };
 
   const handleLogout = async () => {
@@ -185,6 +194,9 @@ export const ChatLayout = () => {
     } finally {
       localStorage.removeItem('token');
       localStorage.removeItem('userId');
+      localStorage.removeItem('currentChannel');
+      localStorage.removeItem('currentChannelName');
+      localStorage.removeItem('currentChannelType');
       navigate('/auth');
     }
   };
@@ -222,9 +234,19 @@ export const ChatLayout = () => {
         return;
       }
 
-      const targetGroup = channel.type === 'dm' 
-        ? grouped.dms 
-        : grouped.memberChannels;
+      // Determine if the current user is a member of this channel
+      const currentUserId = localStorage.getItem('userId');
+      const isMember = channel.members?.some(member => member.id === currentUserId);
+
+      // Determine which group to use
+      let targetGroup;
+      if (channel.type === 'dm') {
+        targetGroup = grouped.dms;
+      } else if (isMember) {
+        targetGroup = grouped.memberChannels;
+      } else {
+        targetGroup = grouped.otherChannels;
+      }
 
       if (!targetGroup[channel.id]) {
         targetGroup[channel.id] = [];
@@ -251,6 +273,34 @@ export const ChatLayout = () => {
     }
   }, [searchResults, channels]);
 
+  const handleSearchResultClick = (channelId: string, channelName: string, isDirectMessage: boolean, messageId: string) => {
+    // First switch to the channel
+    handleChannelSelect(channelId, channelName, isDirectMessage);
+    setIsSearching(false);
+    
+    // Create a function to attempt scrolling
+    const scrollToMessage = () => {
+      const messageElement = document.getElementById(`message-${messageId}`);
+      if (messageElement) {
+        messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        messageElement.classList.add('bg-yellow-50');
+        setTimeout(() => messageElement.classList.remove('bg-yellow-50'), 2000);
+        return true;
+      }
+      return false;
+    };
+
+    // Try scrolling multiple times over a few seconds
+    let attempts = 0;
+    const maxAttempts = 10;
+    const attemptInterval = setInterval(() => {
+      if (scrollToMessage() || attempts >= maxAttempts) {
+        clearInterval(attemptInterval);
+      }
+      attempts++;
+    }, 500);
+  };
+
   return (
     <div className="flex h-screen">
       <Sidebar 
@@ -259,23 +309,23 @@ export const ChatLayout = () => {
         channels={channels}
       />
       <div className="flex-1 flex flex-col">
+        <div className="p-4 border-b flex justify-between items-center bg-white">
+          <div className="flex-1 max-w-2xl">
+            <SearchBar onResultsFound={handleSearchResults} />
+          </div>
+          <div className="flex items-center gap-4 ml-4">
+            <StatusSelector />
+            <button
+              onClick={handleLogout}
+              className="text-gray-600 hover:text-gray-900"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+
         {currentChannel ? (
           <>
-            <div className="p-4 border-b flex justify-between items-center bg-white">
-              <div className="flex-1 max-w-2xl">
-                <SearchBar onResultsFound={handleSearchResults} />
-              </div>
-              <div className="flex items-center gap-4 ml-4">
-                <StatusSelector />
-                <button
-                  onClick={handleLogout}
-                  className="text-gray-600 hover:text-gray-900"
-                >
-                  Logout
-                </button>
-              </div>
-            </div>
-
             {isSearching ? (
               <div className="flex-1 overflow-y-auto p-4">
                 <div className="mb-4 flex justify-between items-center">
@@ -330,6 +380,18 @@ export const ChatLayout = () => {
                                       message={message}
                                       onReactionChange={() => {}}
                                       isReply={false}
+                                      isHighlighted={false}
+                                      onClick={() => {
+                                        const channel = channels.find(c => c.id === message.channelId);
+                                        if (channel) {
+                                          handleSearchResultClick(
+                                            message.channelId,
+                                            channelNames[message.channelId],
+                                            channel.type === 'dm',
+                                            message.id
+                                          );
+                                        }
+                                      }}
                                     />
                                   ))}
                                 </div>
@@ -373,6 +435,73 @@ export const ChatLayout = () => {
                                       message={message}
                                       onReactionChange={() => {}}
                                       isReply={false}
+                                      isHighlighted={false}
+                                      onClick={() => {
+                                        const channel = channels.find(c => c.id === message.channelId);
+                                        if (channel) {
+                                          handleSearchResultClick(
+                                            message.channelId,
+                                            channelNames[message.channelId],
+                                            channel.type === 'dm',
+                                            message.id
+                                          );
+                                        }
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Other Channels */}
+                      {Object.entries(grouped.otherChannels).length > 0 && (
+                        <div className="mb-6">
+                          <h3 className="text-md font-semibold mb-2">Other Channels</h3>
+                          {Object.entries(grouped.otherChannels).map(([channelId, messages]) => (
+                            <div key={channelId} className="mb-4">
+                              <div 
+                                className="flex items-center cursor-pointer hover:bg-gray-50 p-2 rounded"
+                                onClick={() => setCollapsedChannels(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(channelId)) {
+                                    next.delete(channelId);
+                                  } else {
+                                    next.add(channelId);
+                                  }
+                                  return next;
+                                })}
+                              >
+                                <span className="transform transition-transform duration-200 inline-block mr-2">
+                                  {collapsedChannels.has(channelId) ? '▸' : '▾'}
+                                </span>
+                                <span className="font-medium">#{channelNames[channelId]}</span>
+                                <span className="text-gray-500 text-sm ml-2">
+                                  ({messages.length} results)
+                                </span>
+                              </div>
+                              {!collapsedChannels.has(channelId) && (
+                                <div className="ml-6">
+                                  {messages.map(message => (
+                                    <ChatMessage
+                                      key={message.id}
+                                      message={message}
+                                      onReactionChange={() => {}}
+                                      isReply={false}
+                                      isHighlighted={false}
+                                      onClick={() => {
+                                        const channel = channels.find(c => c.id === message.channelId);
+                                        if (channel) {
+                                          handleSearchResultClick(
+                                            message.channelId,
+                                            channelNames[message.channelId],
+                                            channel.type === 'dm',
+                                            message.id
+                                          );
+                                        }
+                                      }}
                                     />
                                   ))}
                                 </div>

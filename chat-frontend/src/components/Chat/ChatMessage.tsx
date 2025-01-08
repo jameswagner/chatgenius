@@ -5,7 +5,7 @@ import { API_BASE_URL } from '../../config/api';
 import { formatMessageTimestamp } from '../../utils/dateUtils';
 import { useState, useEffect, useCallback } from 'react';
 
-const STATUS_ICONS = {
+const STATUS_ICONS: { [key: string]: string } = {
   online: '🟢',
   away: '🌙',
   busy: '⛔',
@@ -18,9 +18,10 @@ interface ChatMessageProps {
   onReactionChange: () => void;
   onThreadClick?: () => void;
   isHighlighted?: boolean;
+  onClick?: () => void;
 }
 
-export const ChatMessage = ({ message, isReply = false, onReactionChange, onThreadClick, isHighlighted = false }: ChatMessageProps) => {
+export const ChatMessage = ({ message, isReply = false, onReactionChange, onThreadClick, isHighlighted = false, onClick }: ChatMessageProps) => {
   const currentUserId = localStorage.getItem('userId');
   const isCurrentUser = message.userId === currentUserId;
 
@@ -41,11 +42,15 @@ export const ChatMessage = ({ message, isReply = false, onReactionChange, onThre
 
   return (
     <div 
-      className={`group flex items-start p-4 ${
-        isCurrentUser ? 'bg-blue-50' : 'hover:bg-gray-50'
+      id={`message-${message.id}`}
+      className={`flex items-start p-2 ${
+        isCurrentUser ? 'bg-blue-50' : ''
       } ${
-        isHighlighted ? 'bg-yellow-100 animate-highlight' : ''
-      } transition-colors duration-500`}
+        isHighlighted ? 'bg-yellow-50' : ''
+      } ${
+        onClick ? 'cursor-pointer hover:bg-gray-50' : ''
+      }`}
+      onClick={onClick}
     >
       <div className={`${isReply ? 'h-8 w-8' : 'h-10 w-10'} rounded bg-gray-300 flex-shrink-0 flex items-center justify-center`}>
         <span className="text-gray-500 font-medium">

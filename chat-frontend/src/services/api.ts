@@ -164,6 +164,13 @@ export const api = {
       const response = await client.get(`/messages/${messageId}`);
       return snakeToCamel(response.data);
     },
+
+    search: async (query: string): Promise<Message[]> => {
+      const response = await client.get(`/search/messages`, {
+        params: { q: query }
+      });
+      return snakeToCamel(response.data);
+    }
   },
 
   // Reaction operations

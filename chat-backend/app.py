@@ -382,5 +382,27 @@ def get_current_user():
         return jsonify({'error': 'User not found'}), 404
     return jsonify(user.to_dict())
 
+@app.route('/search/messages', methods=['GET', 'OPTIONS'])
+def search_messages():
+    # Handle OPTIONS request for CORS
+    if request.method == 'OPTIONS':
+        return '', 200
+        
+    # For GET requests, use the auth decorator
+    @auth_required
+    def handle_search():
+        query = request.args.get('q')
+        if not query:
+            return jsonify({'error': 'Search query is required'}), 400
+            
+        try:
+            messages = db.search_messages(request.user_id, query)
+            return jsonify([message.to_dict() for message in messages])
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+            
+    if request.method == 'GET':
+        return handle_search()
+
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=3000, debug=True) 

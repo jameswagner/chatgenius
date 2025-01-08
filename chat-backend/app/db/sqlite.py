@@ -508,3 +508,45 @@ class SQLiteDB:
                 WHERE cm.channel_id = ?
             """, (channel_id,)).fetchall()
             return [{'id': row['id'], 'name': row['name']} for row in rows]
+
+    def search_messages(self, user_id: str, query: str) -> List[Message]:
+        """Search messages in channels the user has access to"""
+        with self._get_connection() as conn:
+            # Get messages that match the query and are in channels the user is a member of
+            rows = conn.execute("""
+                SELECT DISTINCT m.*, u.name as user_name, u.status as user_status
+                FROM messages m
+                JOIN channels c ON m.channel_id = c.id
+                JOIN channel_members cm ON c.id = cm.channel_id
+                JOIN users u ON m.user_id = u.id
+                WHERE cm.user_id = ?  -- User has access to the channel
+                AND m.content LIKE ?  -- Message contains the query
+                ORDER BY m.created_at DESC
+                LIMIT 50  -- Limit results for performance
+            """, (user_id, f"%{query}%")).fetchall()
+
+            messages = []
+            for row in rows:
+                data = dict(row)
+                # Add user info
+                data['user'] = {
+                    'name': data.pop('user_name'),
+                    'status': data.pop('user_status', 'offline')
+                }
+                # Add attachments
+                data['attachments'] = self.get_message_attachments(data['id'])
+                # Add reactions
+                data['reactions'] = self.get_message_reactions(data['id'])
+                messages.append(Message(**data))
+
+            return messages
+
+    def get_message_attachments(self, message_id: str) -> List[str]:
+        """Get attachments for a message"""
+        with self._get_connection() as conn:
+            rows = conn.execute("""
+                SELECT filename 
+                FROM attachments 
+                WHERE message_id = ?
+            """, (message_id,)).fetchall()
+            return [row['filename'] for row in rows]

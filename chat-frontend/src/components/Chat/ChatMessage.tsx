@@ -27,6 +27,32 @@ export const ChatMessage = ({ message, isReply = false, onReactionChange, onThre
   const isCurrentUser = message.userId === currentUserId;
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
+  const [imageUrls, setImageUrls] = useState<{ [key: string]: string }>({});
+
+  // Fetch presigned URLs for images when message loads
+  useEffect(() => {
+    const fetchImageUrls = async () => {
+      if (message.attachments) {
+        const imageFiles = message.attachments.filter(filename => 
+          /\.(jpg|jpeg|png|gif|webp)$/i.test(filename)
+        );
+        
+        for (const filename of imageFiles) {
+          try {
+            const response = await fetch(`${API_BASE_URL}/uploads/${filename}`);
+            const data = await response.json();
+            if (data.url) {
+              setImageUrls(prev => ({ ...prev, [filename]: data.url }));
+            }
+          } catch (err) {
+            console.error('Failed to get image URL:', err);
+          }
+        }
+      }
+    };
+    
+    fetchImageUrls();
+  }, [message.attachments]);
 
   const getFileUrl = (filename: string) => `${API_BASE_URL}/uploads/${filename}`;
 
@@ -162,27 +188,39 @@ export const ChatMessage = ({ message, isReply = false, onReactionChange, onThre
           </p>
         )}
 
+        {/* Attachments */}
+        {message.attachments && message.attachments.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {message.attachments.map(filename => {
+              const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(filename);
+              return isImage ? (
+                <div key={filename} className="relative group">
+                  <img
+                    src={imageUrls[filename] || getFileUrl(filename)}
+                    alt={filename}
+                    className="max-h-32 rounded cursor-pointer hover:opacity-90"
+                    onClick={(e) => handleFileClick(e, filename)}
+                  />
+                </div>
+              ) : (
+                <button
+                  key={filename}
+                  onClick={(e) => handleFileClick(e, filename)}
+                  className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded hover:bg-gray-200"
+                >
+                  <DocumentIcon className="h-4 w-4 text-gray-500" />
+                  <span className="text-sm text-gray-700">{filename}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Reactions */}
         <MessageReactions 
           message={message}
           onReactionChange={onReactionChange}
         />
-
-        {/* Attachments */}
-        {message.attachments && message.attachments.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {message.attachments.map(filename => (
-              <button
-                key={filename}
-                onClick={(e) => handleFileClick(e, filename)}
-                className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded hover:bg-gray-200"
-              >
-                <DocumentIcon className="h-4 w-4 text-gray-500" />
-                <span className="text-sm text-gray-700">{filename}</span>
-              </button>
-            ))}
-          </div>
-        )}
 
         {/* Thread indicator */}
         {message.replyCount && message.replyCount > 0 && onThreadClick && (

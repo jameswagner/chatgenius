@@ -163,6 +163,11 @@ def create_message(channel_id):
         print('DEBUG_ATTACH: Processing files')
         files = request.files.getlist('files')
         print('DEBUG_ATTACH: Files found:', [f.filename for f in files])
+        
+        # Check attachment limit
+        if len(files) > 5:
+            return jsonify({'error': 'Maximum 5 files allowed per message'}), 400
+            
         for file in files:
             print('DEBUG_ATTACH: Processing file:', file.filename)
             if file and file.filename:

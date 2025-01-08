@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Sidebar } from '../Layout/Sidebar';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
@@ -37,6 +37,9 @@ export const ChatLayout = () => {
   const [collapsedChannels, setCollapsedChannels] = useState<Set<string>>(new Set());
   const [channelNames, setChannelNames] = useState<{ [channelId: string]: string }>({});
   const navigate = useNavigate();
+
+  // Cache for user data
+  const userCache = useRef<{ [userId: string]: any }>({});
 
   // Single WebSocket connection and event listeners
   useEffect(() => {
@@ -119,20 +122,24 @@ export const ChatLayout = () => {
               return m;
             }));
           }
-          // Add the new message to the list
+          // Add the new message, preserving any cached user data
           setMessages(prev => {
-            console.log('Current messages:', prev); // Debug
-            console.log('Adding new message:', message); // Debug
-            return [...prev, message];
+            const cachedUser = userCache.current[message.userId];
+            return [...prev, {
+              ...message,
+              user: cachedUser || message.user
+            }];
           });
         }
       };
 
       const handleReaction = (message: Message) => {
         if (message.channelId === currentChannel) {
-          // Update the message in the messages array
           setMessages(prev => prev.map(m => 
-            m.id === message.id ? message : m
+            m.id === message.id ? {
+              ...m,
+              reactions: message.reactions || {}
+            } : m
           ));
         }
       };
@@ -140,7 +147,13 @@ export const ChatLayout = () => {
       const handleMessageUpdate = (message: Message) => {
         if (message.channelId === currentChannel) {
           setMessages(prev => prev.map(m => 
-            m.id === message.id ? { ...message, isEdited: true, user: m.user, reactions: message.reactions || m.reactions } : m
+            m.id === message.id ? {
+              ...m,
+              content: message.content,
+              isEdited: true,
+              editedAt: message.editedAt,
+              reactions: message.reactions || m.reactions
+            } : m
           ));
         }
       };
@@ -197,15 +210,8 @@ export const ChatLayout = () => {
 
   // Update WebSocket message handler to ensure attachments is always an array
   useEffect(() => {
-    socketService.on('message.new', (message: Message) => {
-      setMessages(prevMessages => [...prevMessages, {
-        ...message,
-        attachments: message.attachments || []
-      }]);
-    });
-
     return () => {
-      socketService.off('message.new', () => {});
+      // Keep empty cleanup to satisfy TypeScript
     };
   }, []);
 
@@ -335,6 +341,15 @@ export const ChatLayout = () => {
       attempts++;
     }, 500);
   };
+
+  // Cache user data when messages are loaded
+  useEffect(() => {
+    messages.forEach(message => {
+      if (message.user) {
+        userCache.current[message.userId] = message.user;
+      }
+    });
+  }, [messages]);
 
   return (
     <div className="flex h-screen">

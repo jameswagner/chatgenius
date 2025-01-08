@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { PaperAirplaneIcon, PaperClipIcon } from '@heroicons/react/24/outline';
+import { PaperAirplaneIcon, PaperClipIcon, DocumentIcon } from '@heroicons/react/24/outline';
 
 interface MessageInputProps {
   channelId: string;
@@ -15,22 +15,20 @@ export const MessageInput = ({ channelId, onSendMessage, threadId, currentChanne
   const [isSending, setIsSending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(e.target.files || []);
-    if (selectedFiles.length > 3) {
-      alert('Maximum 3 files allowed');
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newFiles = Array.from(e.target.files || []);
+    const totalFiles = [...files, ...newFiles];
+    
+    if (totalFiles.length > 5) {
+      alert('Maximum 5 files allowed');
       return;
     }
     
-    const validFiles = selectedFiles.filter(file => {
-      if (file.size > 1024 * 1024) {
-        alert(`File ${file.name} is larger than 1MB`);
-        return false;
-      }
-      return true;
-    });
+    setFiles(totalFiles);
+  };
 
-    setFiles(validFiles);
+  const removeFile = (index: number) => {
+    setFiles(files.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async () => {
@@ -57,13 +55,14 @@ export const MessageInput = ({ channelId, onSendMessage, threadId, currentChanne
   return (
     <div className="p-4 border-t">
       {files.length > 0 && (
-        <div className="mb-2 flex gap-2">
-          {files.map(file => (
-            <div key={file.name} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
-              <span className="text-sm">{file.name}</span>
-              <button 
-                onClick={() => setFiles(files.filter(f => f !== file))}
-                className="text-gray-500 hover:text-gray-700"
+        <div className="mb-2 flex flex-wrap gap-2">
+          {files.map((file, index) => (
+            <div key={index} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
+              <DocumentIcon className="h-4 w-4 text-gray-500" />
+              <span className="text-sm text-gray-700">{file.name}</span>
+              <button
+                onClick={() => removeFile(index)}
+                className="ml-1 text-gray-400 hover:text-gray-600"
               >
                 ×
               </button>
@@ -87,10 +86,12 @@ export const MessageInput = ({ channelId, onSendMessage, threadId, currentChanne
         />
         <input
           type="file"
-          ref={fileInputRef}
-          onChange={handleFileSelect}
           multiple
+          onChange={handleFileChange}
           className="hidden"
+          id="file-input"
+          ref={fileInputRef}
+          accept="image/*,.pdf,.doc,.docx,.txt"
         />
         <button
           onClick={() => fileInputRef.current?.click()}

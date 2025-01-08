@@ -139,20 +139,9 @@ export const ChatLayout = () => {
 
       const handleMessageUpdate = (message: Message) => {
         if (message.channelId === currentChannel) {
-          // Update message without affecting scroll position
-          const scrollContainer = document.querySelector('.message-list');
-          const currentScrollPos = scrollContainer?.scrollTop;
-          
           setMessages(prev => prev.map(m => 
-            m.id === message.id ? { ...message, user: m.user } : m
+            m.id === message.id ? { ...message, isEdited: true, user: m.user, reactions: message.reactions || m.reactions } : m
           ));
-
-          // Restore scroll position after state update
-          if (scrollContainer && currentScrollPos) {
-            setTimeout(() => {
-              scrollContainer.scrollTop = currentScrollPos;
-            }, 0);
-          }
         }
       };
 

@@ -162,6 +162,12 @@ export const ChatMessage = ({ message, isReply = false, onReactionChange, onThre
           </p>
         )}
 
+        {/* Reactions */}
+        <MessageReactions 
+          message={message}
+          onReactionChange={onReactionChange}
+        />
+
         {/* Attachments */}
         {message.attachments && message.attachments.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">

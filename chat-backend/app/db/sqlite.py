@@ -159,13 +159,16 @@ class SQLiteDB:
 
     def create_message(self, channel_id: str, user_id: str, content: str, 
                       thread_id: str = None, attachments: List[str] = None) -> Message:
+        print('DEBUG_ATTACH: DB: Creating message')
+        print('DEBUG_ATTACH: DB: Attachments received:', attachments)
+        
         message_id = str(uuid.uuid4())
         actual_thread_id = thread_id or message_id
         
         current_utc = datetime.now(timezone.utc)
         
-        
         with self._get_connection() as conn:
+            # Insert message
             conn.execute(
                 """
                 INSERT INTO messages (id, channel_id, user_id, content, thread_id, created_at) 
@@ -180,14 +183,15 @@ class SQLiteDB:
                 (message_id,)
             ).fetchone()
             
-
             # Save attachments
             if attachments:
+                print('DEBUG_ATTACH: DB: Saving attachments:', attachments)
                 for filename in attachments:
                     conn.execute(
                         "INSERT INTO attachments (id, message_id, filename) VALUES (?, ?, ?)",
                         (str(uuid.uuid4()), message_id, filename)
                     )
+                print('DEBUG_ATTACH: DB: Attachments saved')
 
             # Get message with attachments and user status
             row = conn.execute("""
@@ -208,6 +212,7 @@ class SQLiteDB:
             data['attachments'] = (data.pop('attachment_files') or '').split(',')
             if data['attachments'] == ['']: data['attachments'] = []
             
+            print('DEBUG_ATTACH: DB: Final message data:', data)
             return Message(**data)
 
     def get_messages(self, channel_id: str) -> List[Message]:

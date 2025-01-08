@@ -70,11 +70,17 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
     return (
       <ChatMessage
         key={message.id}
-        message={message}
+        message={{
+          ...message,
+          attachments: message.attachments || []
+        }}
         isReply={isReply}
         onReactionChange={async () => {
           const updatedMessages = await api.messages.list(channelId);
-          setMessages(updatedMessages);
+          setMessages(updatedMessages.map((msg: Message) => ({
+            ...msg,
+            attachments: msg.attachments || []
+          })));
         }}
         onThreadClick={onThreadClick ? () => onThreadClick(message.id) : undefined}
       />

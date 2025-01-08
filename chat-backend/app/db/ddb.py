@@ -217,6 +217,15 @@ class DynamoDB:
         return channels
 
     def create_message(self, channel_id: str, user_id: str, content: str, thread_id: str = None, attachments: List[str] = None) -> Message:
+        print('DEBUG_ATTACH: DDB: Creating message')
+        print('DEBUG_ATTACH: DDB: Input params:', {
+            'channel_id': channel_id,
+            'user_id': user_id,
+            'content': content,
+            'thread_id': thread_id,
+            'attachments': attachments
+        })
+        
         message_id = self._generate_id()
         timestamp = self._now()
         
@@ -234,6 +243,8 @@ class DynamoDB:
             'attachments': attachments or []
         }
         
+        print('DEBUG_ATTACH: DDB: Item to be saved:', item)
+        
         # Add words to search index
         words = set(content.lower().split())
         for word in words:
@@ -246,6 +257,7 @@ class DynamoDB:
             })
         
         self.table.put_item(Item=item)
+        print('DEBUG_ATTACH: DDB: Item saved successfully')
         
         # Create message object and attach user info
         message = Message(**self._clean_item(item))
@@ -253,6 +265,7 @@ class DynamoDB:
         if user:
             message.user = user
             
+        print('DEBUG_ATTACH: DDB: Final message object:', message.to_dict())
         return message
 
     def _get_message_reactions(self, message_id: str) -> dict:

@@ -60,8 +60,25 @@ export const ChatLayout = () => {
 
     // Listen for status updates
     socketService.on('user.status', (data: { userId: string; status: string }) => {
+      // Update status in existing messages
       setMessages(prevMessages => 
         prevMessages.map(msg => {
+          if (msg.userId === data.userId && msg.user) {
+            return {
+              ...msg,
+              user: {
+                ...msg.user,
+                status: data.status
+              }
+            };
+          }
+          return msg;
+        })
+      );
+
+      // Also update status in search results if any
+      setSearchResults(prevResults =>
+        prevResults.map(msg => {
           if (msg.userId === data.userId && msg.user) {
             return {
               ...msg,
@@ -152,27 +169,54 @@ export const ChatLayout = () => {
     if (!currentChannel) return;
     
     try {
+      console.log('DEBUG_ATTACH: Files received:', files.map(f => ({ name: f.name, size: f.size, type: f.type })));
+      
       const formData = new FormData();
       formData.append('content', content);
       if (threadId) {
         formData.append('thread_id', threadId);
       }
+      
       files.forEach(file => {
-        console.log('Appending file:', file.name, file.size); // Debug files being sent
+        console.log('DEBUG_ATTACH: Appending file:', { name: file.name, size: file.size, type: file.type });
         formData.append('files', file);
       });
 
-      console.log('FormData entries:');
+      // Log FormData contents
+      console.log('DEBUG_ATTACH: FormData entries:');
       for (let pair of formData.entries()) {
-        console.log(pair[0], pair[1]); // Debug FormData contents
+        console.log('DEBUG_ATTACH: FormData entry -', pair[0], ':', pair[1] instanceof File ? `File: ${pair[1].name}` : pair[1]);
       }
 
       const response = await api.messages.create(currentChannel, formData);
-      console.log('Message created with response:', response); // Debug server response
+      console.log('DEBUG_ATTACH: Message created with response:', response);
+
+      // If the message was created successfully, update the messages list
+      if (response) {
+        console.log('DEBUG_ATTACH: Attachments in response:', response.attachments);
+        setMessages(prevMessages => [...prevMessages, {
+          ...response,
+          attachments: response.attachments || []  // Ensure attachments is always an array
+        }]);
+      }
     } catch (error) {
-      console.error('Failed to send message:', error);
+      console.error('DEBUG_ATTACH: Failed to send message:', error);
     }
   };
+
+  // Update WebSocket message handler to ensure attachments is always an array
+  useEffect(() => {
+    socketService.on('message.new', (message: Message) => {
+      setMessages(prevMessages => [...prevMessages, {
+        ...message,
+        attachments: message.attachments || []
+      }]);
+    });
+
+    return () => {
+      socketService.off('message.new', () => {});
+    };
+  }, []);
 
   const handleChannelSelect = (channelId: string, channelName: string, isDirectMessage: boolean) => {
     setCurrentChannel(channelId);

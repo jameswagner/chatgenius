@@ -29,10 +29,7 @@ interface Reaction {
 
 // API Client
 const client = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  baseURL: API_BASE_URL
 });
 
 // Add auth token to all requests
@@ -41,6 +38,12 @@ client.interceptors.request.use(config => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  
+  // Set Content-Type to application/json for non-FormData requests
+  if (!(config.data instanceof FormData)) {
+    config.headers['Content-Type'] = 'application/json';
+  }
+  
   return config;
 });
 
@@ -121,26 +124,41 @@ export const api = {
 
   // Message operations
   messages: {
-    list: async (channelId: string, params?: { before?: string; limit?: number }): Promise<Message[]> => {
-      const response = await client.get(`/channels/${channelId}/messages`, { params });
+    list: async (channelId: string): Promise<Message[]> => {
+      const response = await client.get(`/channels/${channelId}/messages`);
       return snakeToCamel(response.data);
     },
 
-    create: async (channelId: string, data: FormData | { content: string; threadId?: string }): Promise<Message> => {
+    create: async (channelId: string, data: FormData): Promise<Message> => {
+      console.log('DEBUG_ATTACH: Creating message with FormData');
+      
+      // Log FormData contents
+      console.log('DEBUG_ATTACH: FormData entries before sending:');
+      for (let pair of data.entries()) {
+        console.log('DEBUG_ATTACH: FormData entry -', pair[0], ':', pair[1] instanceof File ? `File: ${pair[1].name}` : pair[1]);
+      }
+
+      const token = localStorage.getItem('token');
       const response = await client.post(
         `/channels/${channelId}/messages`,
-        data
+        data,
+        {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : '',
+            // Let the browser set the Content-Type with boundary
+          },
+        }
       );
-      return snakeToCamel(response.data);
+      
+      console.log('DEBUG_ATTACH: Response from server:', response.data);
+      const processedResponse = snakeToCamel(response.data);
+      console.log('DEBUG_ATTACH: Processed response:', processedResponse);
+      
+      return processedResponse;
     },
 
-    getThread: async (messageId: string): Promise<Message[]> => {
-      const response = await client.get(`/messages/${messageId}/thread`);
-      return response.data;
-    },
-
-    createThreadReply: async (messageId: string, data: { content: string }): Promise<Message> => {
-      const response = await client.post(`/messages/${messageId}/thread`, data);
+    search: async (query: string): Promise<Message[]> => {
+      const response = await client.get(`/search/messages`, { params: { q: query } });
       return snakeToCamel(response.data);
     },
 
@@ -149,22 +167,15 @@ export const api = {
       return snakeToCamel(response.data);
     },
 
-    getThreadSummary: async (messageId: string): Promise<Message['threadSummary']> => {
-      const response = await client.get(`/messages/${messageId}/thread/summary`);
-      return snakeToCamel(response.data);
-    },
-
     get: async (messageId: string): Promise<Message> => {
       const response = await client.get(`/messages/${messageId}`);
       return snakeToCamel(response.data);
     },
 
-    search: async (query: string): Promise<Message[]> => {
-      const response = await client.get(`/search/messages`, {
-        params: { q: query }
-      });
+    createThreadReply: async (messageId: string, data: { content: string }): Promise<Message> => {
+      const response = await client.post(`/messages/${messageId}/thread`, data);
       return snakeToCamel(response.data);
-    }
+    },
   },
 
   // Reaction operations

@@ -30,8 +30,7 @@ create_chat_table()
 auth_service = AuthService(db, app.config['SECRET_KEY'])
 
 file_storage = FileStorage()
-MAX_FILES = 3
-MAX_FILE_SIZE = 1024 * 1024  # 1MB
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 # Auth routes
 @app.route('/auth/register', methods=['POST'])
@@ -135,6 +134,11 @@ def get_messages(channel_id):
 @app.route('/channels/<channel_id>/messages', methods=['POST'])
 @auth_required
 def create_message(channel_id):
+    print('DEBUG_ATTACH: Starting message creation')
+    print('DEBUG_ATTACH: Request form data:', dict(request.form))
+    print('DEBUG_ATTACH: Request files:', request.files)
+    print('DEBUG_ATTACH: Files list:', request.files.getlist('files'))
+    
     # Get the channel to check if it's a DM
     channel = db.get_channel_by_id(channel_id)
     if not channel:
@@ -151,16 +155,42 @@ def create_message(channel_id):
                 print(f'[SOCKET] Emitting channel.new to user {other_user_id}')
                 socketio.emit('channel.new', channel_data, room=other_user_id)
 
+    # Handle file uploads
+    attachments = []
+    if 'files' in request.files:
+        print('DEBUG_ATTACH: Processing files')
+        files = request.files.getlist('files')
+        print('DEBUG_ATTACH: Files found:', [f.filename for f in files])
+        for file in files:
+            print('DEBUG_ATTACH: Processing file:', file.filename)
+            if file and file.filename:
+                filename = secure_filename(file.filename)
+                print('DEBUG_ATTACH: Secured filename:', filename)
+                try:
+                    # Save file and get its URL
+                    saved_filename = file_storage.save_file(file, MAX_FILE_SIZE)
+                    attachments.append(saved_filename)
+                    print('DEBUG_ATTACH: File saved:', saved_filename)
+                except Exception as e:
+                    print('DEBUG_ATTACH: Error saving file:', str(e))
+                    return jsonify({'error': f'Failed to save file: {str(e)}'}), 500
+
     # Create message
-    data = request.get_json()
+    content = request.form.get('content', '')
+    thread_id = request.form.get('thread_id')
+    print('DEBUG_ATTACH: Creating message with content:', content)
+    print('DEBUG_ATTACH: Creating message with attachments:', attachments)
+    
     message = db.create_message(
         channel_id=channel_id,
         user_id=request.user_id,
-        content=data['content'],
-        thread_id=data.get('threadId')
+        content=content,
+        thread_id=thread_id,
+        attachments=attachments
     )
     
     message_data = message.to_dict()
+    print('DEBUG_ATTACH: Message created:', message_data)
     socketio.emit('message.new', message_data, room=channel_id)
     return jsonify(message_data), 201
 

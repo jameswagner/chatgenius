@@ -1,6 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { WS_URL } from '../config/api';
-import { Message } from '../types/chat';
+import { Message, Channel } from '../types/chat';
 
 class SocketService {
   private socket: Socket | null = null;
@@ -68,6 +68,16 @@ class SocketService {
   offNewMessage(callback: (message: Message) => void) {
     if (!this.socket) return;
     this.socket.off('message.new', callback);
+  }
+
+  onMessageUpdate(callback: (message: Message) => void) {
+    if (!this.socket) return;
+    this.socket.on('message.update', callback);
+  }
+
+  offMessageUpdate(callback: (message: Message) => void) {
+    if (!this.socket) return;
+    this.socket.off('message.update', callback);
   }
 
   onNewChannel(callback: (channel: Channel) => void) {

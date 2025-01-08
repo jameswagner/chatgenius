@@ -1,31 +1,7 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
 import { AuthResponse } from '../types/auth';
-
-// Types
-interface Channel {
-  id: string;
-  name: string;
-  type: string;
-  createdBy: string;
-  createdAt: string;
-}
-
-interface Message {
-  id: string;
-  content: string;
-  userId: string;
-  channelId: string;
-  threadId?: string;
-  createdAt: string;
-}
-
-interface Reaction {
-  messageId: string;
-  userId: string;
-  emoji: string;
-  createdAt: string;
-}
+import { Message, Channel, Reaction } from '../types/chat';
 
 // API Client
 const client = axios.create({
@@ -155,6 +131,15 @@ export const api = {
       console.log('DEBUG_ATTACH: Processed response:', processedResponse);
       
       return processedResponse;
+    },
+
+    update: async (messageId: string, data: { content: string }): Promise<Message> => {
+      try {
+        const response = await client.put(`/messages/${messageId}`, data);
+        return snakeToCamel(response.data);
+      } catch (error: any) {
+        throw error;
+      }
     },
 
     search: async (query: string): Promise<Message[]> => {

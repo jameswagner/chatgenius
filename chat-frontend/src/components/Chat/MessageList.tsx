@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Message } from '../../types/chat';
 import { formatInTimeZone } from 'date-fns-tz';
 import { format } from 'date-fns';
@@ -10,7 +10,7 @@ import { ChatMessage } from './ChatMessage';
 interface MessageListProps {
   channelId: string;
   messages: Message[];
-  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+  setMessages: (messages: Message[]) => void;
   currentChannelName: string;
   onThreadClick?: (messageId: string) => void;
 }
@@ -21,38 +21,39 @@ interface ThreadGroup {
 }
 
 export const MessageList = ({ channelId, messages, setMessages, currentChannelName, onThreadClick }: MessageListProps) => {
-
-  const [selectedThread, setSelectedThread] = useState<Message | null>(null);
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
-  const currentUserId = localStorage.getItem('userId');
+  const [selectedThread, setSelectedThread] = useState<Message | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const threadGroups = messages.reduce((groups: ThreadGroup[], message) => {
-    const group = groups.find(g => g.threadId === message.threadId);
-    if (group) {
-      group.messages.push(message);
-    } else {
-      groups.push({ threadId: message.threadId, messages: [message] });
-    }
-    return groups;
-  }, []);
+  // Track previous messages for comparison
+  const prevMessagesRef = useRef(messages);
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-
-    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    
-    // Format in local timezone
-    const formatted = format(date, 'h:mm a');
-    
-    // Check if date is before today
-    const today = new Date();
-    if (date.toDateString() < today.toDateString()) {
-      const dateFormatted = format(date, 'MMM d');
-      return `${dateFormatted} ${formatted}`;
-    }
-    
-    return formatted;
+  const scrollToBottom = () => {
+    console.log('Attempting to scroll to bottom');
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    const prevMessages = prevMessagesRef.current;
+    const isNewMessage = messages.length > prevMessages.length;
+    
+    console.log('Messages changed:', {
+      prevLength: prevMessages.length,
+      newLength: messages.length,
+      isNewMessage,
+      lastMessage: messages[messages.length - 1]
+    });
+    
+    if (isNewMessage) {
+      console.log('Scrolling due to new message');
+      scrollToBottom();
+    } else {
+      console.log('Not scrolling - message was edited or no new message');
+    }
+
+    prevMessagesRef.current = messages;
+  }, [messages]);
 
   const toggleThread = (threadId: string) => {
     setExpandedThreads(prev => {
@@ -66,21 +67,33 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
     });
   };
 
+  // Group messages by thread
+  const threadGroups = messages.reduce((groups: ThreadGroup[], message) => {
+    if (!message.threadId || message.threadId === message.id) {
+      // This is a parent message
+      groups.push({
+        threadId: message.id,
+        messages: [message]
+      });
+    } else {
+      // This is a reply
+      const parentGroup = groups.find(g => g.threadId === message.threadId);
+      if (parentGroup) {
+        parentGroup.messages.push(message);
+      }
+    }
+    return groups;
+  }, []);
+
   const renderMessage = (message: Message, isReply = false) => {
     return (
       <ChatMessage
         key={message.id}
-        message={{
-          ...message,
-          attachments: message.attachments || []
-        }}
+        message={message}
         isReply={isReply}
         onReactionChange={async () => {
           const updatedMessages = await api.messages.list(channelId);
-          setMessages(updatedMessages.map((msg: Message) => ({
-            ...msg,
-            attachments: msg.attachments || []
-          })));
+          setMessages(updatedMessages);
         }}
         onThreadClick={onThreadClick ? () => onThreadClick(message.id) : undefined}
       />
@@ -95,12 +108,17 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
 
     return (
       <div key={thread.threadId} className="mb-6">
-        {/* First message */}
         {renderMessage(firstMessage)}
 
         <div className="flex items-center mt-1 space-x-3 ml-13">
           <button 
-            onClick={() => setSelectedThread(firstMessage)}
+            onClick={() => {
+              if (onThreadClick) {
+                onThreadClick(firstMessage.id);
+              } else {
+                setSelectedThread(firstMessage);
+              }
+            }}
             className="text-sm text-blue-500 hover:text-blue-700"
           >
             Reply in thread
@@ -120,7 +138,6 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
           )}
         </div>
 
-        {/* Replies */}
         {replies.length > 0 && isExpanded && (
           <div className="ml-12 mt-2 space-y-2 border-l-2 border-gray-200 pl-4">
             {replies.map(reply => renderMessage(reply, true))}
@@ -130,26 +147,15 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
     );
   };
 
-  useEffect(() => {
-    const fetchMessages = async () => {
-      try {
-        const data = await api.messages.list(channelId);
-        setMessages(data);
-      } catch (err) {
-        console.error('Failed to fetch messages:', err);
-      }
-    };
-    fetchMessages();
-  }, [channelId]);
-
   return (
     <div className="flex h-full">
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        {threadGroups.map(renderThread)}
+      <div className="flex-1 overflow-y-auto p-4 message-list">
+        {threadGroups.map(thread => renderThread(thread))}
+        <div ref={messagesEndRef} />
       </div>
       
       {selectedThread && (
-        <ThreadView 
+        <ThreadView
           parentMessage={selectedThread}
           onClose={() => setSelectedThread(null)}
         />

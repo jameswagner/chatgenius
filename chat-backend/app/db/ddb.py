@@ -515,3 +515,43 @@ class DynamoDB:
                 })
                 
         return members 
+
+    def update_message(self, message_id: str, content: str) -> Message:
+        """Update a message's content and maintain edit history"""
+        timestamp = self._now()
+        
+        # First get the message to get its channel_id and created_at
+        message = self.get_message(message_id)
+        if not message:
+            raise ValueError("Message not found")
+            
+        # Create a version entry with the current content and timestamp
+        version_entry = {
+            'content': message.content,  # Current content becomes old version
+            'edited_at': message.edited_at if hasattr(message, 'edited_at') else message.created_at
+        }
+            
+        # Update the message
+        self.table.update_item(
+            Key={
+                'PK': f'CHANNEL#{message.channel_id}',
+                'SK': f'MSG#{message.created_at}#{message_id}'
+            },
+            UpdateExpression='SET content = :content, edited_at = :edited_at, is_edited = :is_edited, edit_history = list_append(if_not_exists(edit_history, :empty_list), :version)',
+            ExpressionAttributeValues={
+                ':content': content,
+                ':edited_at': timestamp,
+                ':is_edited': True,
+                ':version': [version_entry],
+                ':empty_list': []
+            }
+        )
+            
+        # Get updated message and attach user data
+        updated_message = self.get_message(message_id)
+        if updated_message:
+            user = self.get_user_by_id(updated_message.user_id)
+            if user:
+                updated_message.user = user
+                
+        return updated_message 

@@ -19,6 +19,9 @@ export interface Message {
   channelId: string;
   threadId?: string;
   createdAt: string;
+  editedAt?: string;
+  isEdited?: boolean;
+  version: number;
   reactions?: { [emoji: string]: string[] };
   attachments: string[];
   replyCount?: number;

@@ -555,3 +555,14 @@ class SQLiteDB:
                 WHERE message_id = ?
             """, (message_id,)).fetchall()
             return [row['filename'] for row in rows]
+
+    def update_message(self, message_id: str, content: str) -> Message:
+        """Update a message's content"""
+        with self._get_connection() as conn:
+            conn.execute("""
+                UPDATE messages 
+                SET content = ?
+                WHERE id = ?
+            """, (content, message_id))
+            
+            return self.get_message(message_id)

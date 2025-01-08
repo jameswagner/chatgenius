@@ -13,6 +13,9 @@ class Message:
     attachments: List[str] = field(default_factory=list)
     user: Optional[dict] = None
     reactions: Dict[str, List[str]] = field(default_factory=dict)
+    edited_at: Optional[str | datetime] = None
+    is_edited: bool = False
+    edit_history: List[dict] = field(default_factory=list)
 
     def to_dict(self):
         return {
@@ -26,5 +29,10 @@ class Message:
                          else self.created_at),
             'attachments': self.attachments,
             'user': self.user.to_dict() if hasattr(self.user, 'to_dict') else self.user,
-            'reactions': self.reactions
+            'reactions': self.reactions,
+            'editedAt': (self.edited_at.strftime('%Y-%m-%d %H:%M:%S')
+                        if isinstance(self.edited_at, datetime)
+                        else self.edited_at),
+            'isEdited': self.is_edited,
+            'editHistory': self.edit_history
         } 

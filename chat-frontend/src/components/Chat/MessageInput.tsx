@@ -12,6 +12,7 @@ interface MessageInputProps {
 export const MessageInput = ({ channelId, onSendMessage, threadId, currentChannelName, placeholder }: MessageInputProps) => {
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const [isSending, setIsSending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -32,16 +33,26 @@ export const MessageInput = ({ channelId, onSendMessage, threadId, currentChanne
     setFiles(validFiles);
   };
 
-  const handleSubmit = () => {
-    if (message.trim() || files.length > 0) {
-      onSendMessage(message, files, threadId);
+  const handleSubmit = async () => {
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage && files.length === 0) return;
+    
+    setIsSending(true);
+    try {
+      // Call onSendMessage immediately for optimistic update
+      onSendMessage(trimmedMessage, files, threadId);
+      // Clear the input immediately
       setMessage('');
       setFiles([]);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+    } finally {
+      setIsSending(false);
     }
   };
+
+  const isDisabled = (!message.trim() && files.length === 0) || isSending;
 
   return (
     <div className="p-4 border-t">
@@ -68,7 +79,7 @@ export const MessageInput = ({ channelId, onSendMessage, threadId, currentChanne
           placeholder={placeholder || `Message ${currentChannelName}`}
           className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:border-blue-500"
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && !e.shiftKey && !isDisabled) {
               e.preventDefault();
               handleSubmit();
             }
@@ -84,12 +95,14 @@ export const MessageInput = ({ channelId, onSendMessage, threadId, currentChanne
         <button
           onClick={() => fileInputRef.current?.click()}
           className="p-2 text-gray-500 hover:text-gray-700"
+          disabled={isSending}
         >
           <PaperClipIcon className="h-5 w-5" />
         </button>
         <button
           onClick={handleSubmit}
-          className="p-2 text-blue-500 hover:text-blue-600"
+          disabled={isDisabled}
+          className={`p-2 ${isDisabled ? 'text-gray-300 cursor-not-allowed' : 'text-blue-500 hover:text-blue-600'}`}
         >
           <PaperAirplaneIcon className="h-5 w-5" />
         </button>

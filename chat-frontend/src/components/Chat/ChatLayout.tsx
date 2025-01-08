@@ -137,13 +137,34 @@ export const ChatLayout = () => {
         }
       };
 
+      const handleMessageUpdate = (message: Message) => {
+        if (message.channelId === currentChannel) {
+          // Update message without affecting scroll position
+          const scrollContainer = document.querySelector('.message-list');
+          const currentScrollPos = scrollContainer?.scrollTop;
+          
+          setMessages(prev => prev.map(m => 
+            m.id === message.id ? { ...message, user: m.user } : m
+          ));
+
+          // Restore scroll position after state update
+          if (scrollContainer && currentScrollPos) {
+            setTimeout(() => {
+              scrollContainer.scrollTop = currentScrollPos;
+            }, 0);
+          }
+        }
+      };
+
       socketService.onNewMessage(handleNewMessage);
       socketService.on('message.reaction', handleReaction);
+      socketService.onMessageUpdate(handleMessageUpdate);
 
       return () => {
         socketService.leaveChannel(currentChannel);
         socketService.offNewMessage(handleNewMessage);
         socketService.off('message.reaction', handleReaction);
+        socketService.offMessageUpdate(handleMessageUpdate);
       };
     }
   }, [currentChannel]);
@@ -169,8 +190,6 @@ export const ChatLayout = () => {
     if (!currentChannel) return;
     
     try {
-      console.log('DEBUG_ATTACH: Files received:', files.map(f => ({ name: f.name, size: f.size, type: f.type })));
-      
       const formData = new FormData();
       formData.append('content', content);
       if (threadId) {
@@ -178,29 +197,12 @@ export const ChatLayout = () => {
       }
       
       files.forEach(file => {
-        console.log('DEBUG_ATTACH: Appending file:', { name: file.name, size: file.size, type: file.type });
         formData.append('files', file);
       });
 
-      // Log FormData contents
-      console.log('DEBUG_ATTACH: FormData entries:');
-      for (let pair of formData.entries()) {
-        console.log('DEBUG_ATTACH: FormData entry -', pair[0], ':', pair[1] instanceof File ? `File: ${pair[1].name}` : pair[1]);
-      }
-
-      const response = await api.messages.create(currentChannel, formData);
-      console.log('DEBUG_ATTACH: Message created with response:', response);
-
-      // If the message was created successfully, update the messages list
-      if (response) {
-        console.log('DEBUG_ATTACH: Attachments in response:', response.attachments);
-        setMessages(prevMessages => [...prevMessages, {
-          ...response,
-          attachments: response.attachments || []  // Ensure attachments is always an array
-        }]);
-      }
+      await api.messages.create(currentChannel, formData);
     } catch (error) {
-      console.error('DEBUG_ATTACH: Failed to send message:', error);
+      console.error('Failed to send message:', error);
     }
   };
 

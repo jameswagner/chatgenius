@@ -9,6 +9,8 @@ import jwt
 from werkzeug.utils import secure_filename
 from app.storage.file_storage import FileStorage
 from scripts.create_table import create_chat_table
+from boto3.dynamodb.conditions import Key
+from boto3 import client
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
@@ -420,5 +422,45 @@ def search_messages():
     if request.method == 'GET':
         return handle_search()
 
+@app.route('/health')
+def health_check():
+    return jsonify({
+        'status': 'healthy',
+        'service': 'jrw-chat-app'
+    }), 200
+
+@app.route('/messages/<message_id>', methods=['PUT'])
+@auth_required
+def update_message(message_id):
+    data = request.get_json()
+    
+    if not data or 'content' not in data:
+        return jsonify({'error': 'Content is required'}), 400
+    
+    try:
+        # Get the message
+        message = db.get_message(message_id)
+        if not message:
+            return jsonify({'error': 'Message not found'}), 404
+        
+        # Verify ownership
+        if str(message.user_id) != str(request.user_id):
+            return jsonify({'error': 'You can only edit your own messages'}), 403
+        
+        # Update the message
+        updated_message = db.update_message(
+            message_id=message_id,
+            content=data['content']
+        )
+        
+        # Emit WebSocket event
+        socketio.emit('message.update', updated_message.to_dict(), room=str(message.channel_id))
+        
+        return jsonify(updated_message.to_dict())
+
+    except Exception as e:
+        print(f"Error updating message: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=3000, debug=True) 
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True) 

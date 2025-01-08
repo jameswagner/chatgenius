@@ -122,7 +122,7 @@ class DynamoDB:
     def _clean_item(self, item: dict) -> dict:
         """Remove DynamoDB-specific attributes from items"""
         # Remove internal DynamoDB attributes
-        dynamo_attrs = ['PK', 'SK', 'GSI1PK', 'GSI1SK', 'GSI2PK', 'GSI2SK', 'GSI3PK', 'GSI3SK']
+        dynamo_attrs = ['PK', 'SK', 'GSI1PK', 'GSI1SK', 'GSI2PK', 'GSI2SK', 'GSI3PK', 'GSI3SK', 'display_name']
         cleaned = {k: v for k, v in item.items() if k not in dynamo_attrs}
         
         # Determine item type and clean accordingly
@@ -131,17 +131,8 @@ class DynamoDB:
                 # Remove user-specific internal attributes
                 user_internal_attrs = ['type']
                 cleaned = {k: v for k, v in cleaned.items() if k not in user_internal_attrs}
-            elif cleaned['type'] == 'dm':
-                # For DM channels, use display_name as name and remove display_name
-                if 'display_name' in cleaned:
-                    cleaned['name'] = cleaned.pop('display_name')
-                cleaned.setdefault('members', [])
-                cleaned.setdefault('created_by', None)
-                cleaned.setdefault('created_at', self._now())
             else:
-                # For other channels, ensure required fields
-                if 'display_name' in cleaned:
-                    del cleaned['display_name']
+                # For all channels (including DMs), ensure required fields
                 cleaned.setdefault('members', [])
                 cleaned.setdefault('created_by', None)
                 cleaned.setdefault('created_at', self._now())
@@ -156,11 +147,6 @@ class DynamoDB:
         if type == 'dm' and other_user_id:
             user_ids = sorted([created_by, other_user_id])
             name = f"dm_{user_ids[0]}_{user_ids[1]}"
-            # Get other user's name
-            other_user = self.get_user_by_id(other_user_id)
-            display_name = other_user.name if other_user else name
-        else:
-            display_name = name
         
         item = {
             'PK': f'CHANNEL#{channel_id}',
@@ -169,7 +155,6 @@ class DynamoDB:
             'GSI1SK': f'NAME#{name}',
             'id': channel_id,
             'name': name,
-            'display_name': display_name,  # Add display name
             'type': type,
             'created_by': created_by,
             'created_at': timestamp,
@@ -185,6 +170,12 @@ class DynamoDB:
         # For DM channels, add other user
         if type == 'dm' and other_user_id:
             self.add_channel_member(channel_id, other_user_id)
+            
+        # For DM channels, get the channel with members
+        if type == 'dm':
+            channel = Channel(**self._clean_item(item))
+            channel.members = self.get_channel_members(channel_id)
+            return channel
             
         return Channel(**self._clean_item(item))
 
@@ -218,7 +209,10 @@ class DynamoDB:
                 }
             )
             if 'Item' in response:
-                channels.append(Channel(**self._clean_item(response['Item'])))
+                channel = Channel(**self._clean_item(response['Item']))
+                if channel.type == 'dm':
+                    channel.members = self.get_channel_members(channel_id)
+                channels.append(channel)
                 
         return channels
 
@@ -426,8 +420,12 @@ class DynamoDB:
         user_channels = self.get_channels_for_user(user_id)
         user_channel_ids = {c.id for c in user_channels}
         
-        return [Channel(**self._clean_item(item)) for item in response['Items'] 
-                if item['id'] not in user_channel_ids]
+        channels = []
+        for item in response['Items']:
+            cleaned = self._clean_item(item)
+            if cleaned['id'] not in user_channel_ids:
+                channels.append(Channel(**cleaned))
+        return channels
 
     def get_dm_channel(self, user1_id: str, user2_id: str) -> Optional[Channel]:
         user_ids = sorted([user1_id, user2_id])

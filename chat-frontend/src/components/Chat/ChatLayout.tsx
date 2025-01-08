@@ -4,92 +4,43 @@ import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { api } from '../../services/api';
 import { socketService } from '../../services/socket';
-import { Message } from '../../types/chat';
+import { Message, Channel } from '../../types/chat';
 import { useNavigate } from 'react-router-dom';
 import { StatusSelector } from './StatusSelector';
 
 export const ChatLayout = () => {
-  const [currentChannel, setCurrentChannel] = useState<string>('general');
-  const [currentChannelName, setCurrentChannelName] = useState<string>('general');
+  const [currentChannel, setCurrentChannel] = useState<string | null>(null);
+  const [currentChannelName, setCurrentChannelName] = useState<string>('');
   const [currentChannelType, setCurrentChannelType] = useState<string>('public');
   const [messages, setMessages] = useState<Message[]>([]);
+  const [channels, setChannels] = useState<Channel[]>([]);
   const navigate = useNavigate();
 
-  // Connect to WebSocket when component mounts
+  // Single WebSocket connection and event listeners
   useEffect(() => {
     socketService.connect();
-    return () => socketService.disconnect();
-  }, []);
 
-  // Join channel and listen for messages
-  useEffect(() => {
-    socketService.joinChannel(currentChannel);
-    
-    const handleNewMessage = (message: Message) => {
-      if (message.channelId === currentChannel) {
-        console.log('Received new message through WebSocket:', message); // Debug
-        // If it's a thread reply, update the parent message's thread count
-        if (message.threadId && message.threadId !== message.id) {
-          setMessages(prev => prev.map(m => {
-            if (m.id === message.threadId) {
-              return {
-                ...m,
-                replyCount: (m.replyCount || 0) + 1
-              };
-            }
-            return m;
-          }));
+    // Listen for new channels
+    socketService.on('channel.new', (channel) => {
+      if (!channel) return; // Guard against undefined channel
+
+      setChannels(prevChannels => {
+        // Guard against undefined prevChannels
+        if (!prevChannels) return [channel];
+        
+        // Check if channel already exists
+        if (prevChannels.some(c => c?.id === channel.id)) {
+          return prevChannels;
         }
-        // Add the new message to the list
-        setMessages(prev => {
-          console.log('Current messages:', prev); // Debug
-          console.log('Adding new message:', message); // Debug
-          return [...prev, message];
-        });
-      }
-    };
+        return [...prevChannels, channel];
+      });
+    });
 
-    const handleReaction = (message: Message) => {
-      if (message.channelId === currentChannel) {
-        // Update the message in the messages array
-        setMessages(prev => prev.map(m => 
-          m.id === message.id ? message : m
-        ));
-      }
-    };
-
-    socketService.onNewMessage(handleNewMessage);
-    socketService.on('message.reaction', handleReaction);
-
-    return () => {
-      socketService.leaveChannel(currentChannel);
-      socketService.offNewMessage(handleNewMessage);
-      socketService.off('message.reaction', handleReaction);
-    };
-  }, [currentChannel]);
-
-  // Initial messages load
-  useEffect(() => {
-    const fetchMessages = async () => {
-      try {
-        const data = await api.messages.list(currentChannel);
-        setMessages(data);
-      } catch (err) {
-        console.error('Failed to fetch messages:', err);
-      }
-    };
-    fetchMessages();
-  }, [currentChannel]);
-
-  // Update status listener to immediately update message states
-  useEffect(() => {
+    // Listen for status updates
     socketService.on('user.status', (data: { userId: string; status: string }) => {
-      console.log('Received status update:', data);  // Debug log
-      setMessages(prevMessages => {
-        console.log('Current messages:', prevMessages);  // Debug log
-        return prevMessages.map(msg => {
+      setMessages(prevMessages => 
+        prevMessages.map(msg => {
           if (msg.userId === data.userId) {
-            console.log('Updating message for user:', msg.userId, 'new status:', data.status);  // Debug log
             return {
               ...msg,
               user: {
@@ -99,14 +50,80 @@ export const ChatLayout = () => {
             };
           }
           return msg;
-        });
-      });
+        })
+      );
     });
 
     return () => {
+      socketService.off('channel.new', () => {});
       socketService.off('user.status', () => {});
+      socketService.disconnect();
     };
   }, []);
+
+  // Join channel and listen for messages
+  useEffect(() => {
+    if (currentChannel) {
+      socketService.joinChannel(currentChannel);
+      
+      const handleNewMessage = (message: Message) => {
+        if (message.channelId === currentChannel) {
+          console.log('Received new message through WebSocket:', message); // Debug
+          // If it's a thread reply, update the parent message's thread count
+          if (message.threadId && message.threadId !== message.id) {
+            setMessages(prev => prev.map(m => {
+              if (m.id === message.threadId) {
+                return {
+                  ...m,
+                  replyCount: (m.replyCount || 0) + 1
+                };
+              }
+              return m;
+            }));
+          }
+          // Add the new message to the list
+          setMessages(prev => {
+            console.log('Current messages:', prev); // Debug
+            console.log('Adding new message:', message); // Debug
+            return [...prev, message];
+          });
+        }
+      };
+
+      const handleReaction = (message: Message) => {
+        if (message.channelId === currentChannel) {
+          // Update the message in the messages array
+          setMessages(prev => prev.map(m => 
+            m.id === message.id ? message : m
+          ));
+        }
+      };
+
+      socketService.onNewMessage(handleNewMessage);
+      socketService.on('message.reaction', handleReaction);
+
+      return () => {
+        socketService.leaveChannel(currentChannel);
+        socketService.offNewMessage(handleNewMessage);
+        socketService.off('message.reaction', handleReaction);
+      };
+    }
+  }, [currentChannel]);
+
+  // Initial messages load
+  useEffect(() => {
+    if (currentChannel) {
+      const fetchMessages = async () => {
+        try {
+          const data = await api.messages.list(currentChannel);
+          setMessages(data);
+        } catch (err) {
+          console.error('Failed to fetch messages:', err);
+        }
+      };
+      fetchMessages();
+    }
+  }, [currentChannel]);
 
   const handleSendMessage = async (content: string, files: File[], threadId?: string) => {
     try {
@@ -154,36 +171,45 @@ export const ChatLayout = () => {
   return (
     <div className="flex h-screen">
       <Sidebar 
-        currentChannel={currentChannel}
+        currentChannel={currentChannel || ''}
         onChannelSelect={handleChannelSelect}
+        channels={channels}
       />
       <div className="flex-1 flex flex-col">
-        <div className="p-4 border-b flex justify-between items-center bg-white">
-          <h2 className="text-xl font-bold">
-            {currentChannelType !== 'dm' ? `#${currentChannelName}` : currentChannelName}
-          </h2>
-          <div className="flex items-center gap-4">
-            <StatusSelector />
-            <button
-              onClick={handleLogout}
-              className="text-gray-600 hover:text-gray-900"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
+        {currentChannel ? (
+          <>
+            <div className="p-4 border-b flex justify-between items-center bg-white">
+              <h2 className="text-xl font-bold">
+                {currentChannelType !== 'dm' ? `#${currentChannelName}` : currentChannelName}
+              </h2>
+              <div className="flex items-center gap-4">
+                <StatusSelector />
+                <button
+                  onClick={handleLogout}
+                  className="text-gray-600 hover:text-gray-900"
+                >
+                  Logout
+                </button>
+              </div>
+            </div>
 
-        <MessageList 
-          channelId={currentChannel}
-          messages={messages}
-          setMessages={setMessages}
-          currentChannelName={currentChannelName}
-        />
-        <MessageInput 
-          channelId={currentChannel}
-          onSendMessage={handleSendMessage}
-          currentChannelName={currentChannelName}
-        />
+            <MessageList 
+              channelId={currentChannel}
+              messages={messages}
+              setMessages={setMessages}
+              currentChannelName={currentChannelName}
+            />
+            <MessageInput 
+              channelId={currentChannel}
+              onSendMessage={handleSendMessage}
+              currentChannelName={currentChannelName}
+            />
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-gray-500">
+            Select a channel to start chatting
+          </div>
+        )}
       </div>
     </div>
   );

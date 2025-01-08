@@ -21,7 +21,6 @@ interface ThreadGroup {
 }
 
 export const MessageList = ({ channelId, messages, setMessages, currentChannelName, onThreadClick }: MessageListProps) => {
-  console.log('MessageList renadering with messages:', messages); // Debug
 
   const [selectedThread, setSelectedThread] = useState<Message | null>(null);
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());

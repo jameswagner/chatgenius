@@ -153,7 +153,7 @@ class SQLiteDB:
                     for uid, name in zip(member_ids, member_names)
                     if uid and name  # Filter out empty values
                 ]
-                print(f"Channel {data['name']} has members: {data['members']}")  # Debug log
+                
                 channels.append(Channel(**data))
             return channels
 
@@ -163,7 +163,7 @@ class SQLiteDB:
         actual_thread_id = thread_id or message_id
         
         current_utc = datetime.now(timezone.utc)
-        print(f"[TIMESTAMP] DB 1. Current UTC time: {current_utc.isoformat()}")
+        
         
         with self._get_connection() as conn:
             conn.execute(
@@ -179,7 +179,7 @@ class SQLiteDB:
                 "SELECT created_at FROM messages WHERE id = ?", 
                 (message_id,)
             ).fetchone()
-            print(f"[TIMESTAMP] DB 2. SQLite stored timestamp: {row['created_at']}")
+            
 
             # Save attachments
             if attachments:
@@ -189,9 +189,9 @@ class SQLiteDB:
                         (str(uuid.uuid4()), message_id, filename)
                     )
 
-            # Get message with attachments
+            # Get message with attachments and user status
             row = conn.execute("""
-                SELECT m.*, u.name as user_name,
+                SELECT m.*, u.name as user_name, u.status as user_status,
                        GROUP_CONCAT(a.filename) as attachment_files
                 FROM messages m
                 LEFT JOIN users u ON m.user_id = u.id
@@ -201,7 +201,10 @@ class SQLiteDB:
             """, (message_id,)).fetchone()
             
             data = dict(row)
-            data['user'] = {'name': data.pop('user_name')}
+            data['user'] = {
+                'name': data.pop('user_name'),
+                'status': data.pop('user_status', 'offline')  # Include user status
+            }
             data['attachments'] = (data.pop('attachment_files') or '').split(',')
             if data['attachments'] == ['']: data['attachments'] = []
             
@@ -440,3 +443,68 @@ class SQLiteDB:
                 (user_id,)
             ).fetchone()
             return row['status'] if row else None
+
+    def get_dm_channel(self, user1_id: str, user2_id: str) -> Optional[Channel]:
+        """Find an existing DM channel between two users"""
+        with self._get_connection() as conn:
+            # Get channels where both users are members
+            rows = conn.execute("""
+                SELECT c.* FROM channels c
+                JOIN channel_members cm1 ON c.id = cm1.channel_id
+                JOIN channel_members cm2 ON c.id = cm2.channel_id
+                WHERE c.type = 'dm'
+                AND cm1.user_id = ?
+                AND cm2.user_id = ?
+            """, (user1_id, user2_id)).fetchall()
+            
+            # Return the first matching channel if found
+            return Channel(**dict(rows[0])) if rows else None
+
+    def get_channel_by_id(self, channel_id: str) -> Optional[Channel]:
+        """Get a channel by its ID"""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM channels WHERE id = ?",
+                (channel_id,)
+            ).fetchone()
+            return Channel(**dict(row)) if row else None
+
+    def get_channel_message_count(self, channel_id: str) -> int:
+        """Get the number of messages in a channel"""
+        with self._get_connection() as conn:
+            row = conn.execute("""
+                SELECT COUNT(*) as count 
+                FROM messages 
+                WHERE channel_id = ?
+            """, (channel_id,))
+            count = row.fetchone()['count']
+            print(f"[DB] Message count for channel {channel_id}: {count}")
+            return count
+
+    def get_other_dm_user(self, channel_id: str, current_user_id: str) -> Optional[str]:
+        """Get the other user's ID in a DM channel"""
+        with self._get_connection() as conn:
+            row = conn.execute("""
+                SELECT user_id, channel_id 
+                FROM channel_members 
+                WHERE channel_id = ? AND user_id != ?
+                LIMIT 1
+            """, (channel_id, current_user_id)).fetchone()
+            
+            if row:
+                print(f"[DB] Found other user {row['user_id']} in channel {row['channel_id']}")
+            else:
+                print(f"[DB] No other user found in channel {channel_id}")
+            
+            return row['user_id'] if row else None
+
+    def get_channel_members(self, channel_id: str) -> List[dict]:
+        """Get members of a channel"""
+        with self._get_connection() as conn:
+            rows = conn.execute("""
+                SELECT u.id, u.name
+                FROM channel_members cm
+                JOIN users u ON cm.user_id = u.id
+                WHERE cm.channel_id = ?
+            """, (channel_id,)).fetchall()
+            return [{'id': row['id'], 'name': row['name']} for row in rows]

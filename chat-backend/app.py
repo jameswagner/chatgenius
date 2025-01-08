@@ -97,12 +97,25 @@ def get_channels():
 def create_channel():
     data = request.get_json()
     try:
+        # For DM channels, check if one already exists
+        if data.get('type') == 'dm' and data.get('otherUserId'):
+            existing_channel = db.get_dm_channel(request.user_id, data['otherUserId'])
+            if existing_channel:
+                return jsonify(existing_channel.to_dict()), 200
+
+        # If no existing DM found, or not a DM, create new channel
         channel = db.create_channel(
             name=data['name'],
             type=data.get('type', 'public'),
             created_by=request.user_id,
-            other_user_id=data.get('otherUserId')  # For DM channels
+            other_user_id=data.get('otherUserId')
         )
+        
+        # Only emit for non-DM channels
+        # For DMs, we'll emit when the first message is sent
+        if data.get('type') != 'dm':
+            socketio.emit('channel.new', channel.to_dict())
+            
         return jsonify(channel.to_dict()), 201
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
@@ -117,13 +130,24 @@ def get_messages(channel_id):
 @app.route('/channels/<channel_id>/messages', methods=['POST'])
 @auth_required
 def create_message(channel_id):
-    print("[TIMESTAMP] 1. Message creation request received")
-    
-    print("Received message creation request")  # Debug
+    # Get the channel to check if it's a DM
+    channel = db.get_channel_by_id(channel_id)
+    if not channel:
+        return jsonify({'error': 'Channel not found'}), 404
+        
+    # For DM channels, we'll need to notify the other user about the channel
+    if channel.type == 'dm':
+        message_count = db.get_channel_message_count(channel_id)
+        if message_count == 0:
+            other_user_id = db.get_other_dm_user(channel_id, request.user_id)
+            if other_user_id:
+                channel_data = channel.to_dict()
+                channel_data['members'] = db.get_channel_members(channel_id)
+                print(f'[SOCKET] Emitting channel.new to user {other_user_id}')
+                socketio.emit('channel.new', channel_data, room=other_user_id)
+
+    # Handle file uploads
     files = request.files.getlist('files')
-    print(f"Files received: {[f.filename for f in files]}")  # Debug file list
-    
-    # Validate number of files
     if len(files) > MAX_FILES:
         return jsonify({'error': f'Maximum {MAX_FILES} files allowed'}), 400
 
@@ -132,12 +156,9 @@ def create_message(channel_id):
     try:
         for file in files:
             if file.filename:
-                print(f"Processing file: {file.filename}")  # Debug each file
                 filename = file_storage.save_file(file, MAX_FILE_SIZE)
-                print(f"Saved as: {filename}")  # Debug saved filename
                 saved_files.append(filename)
     except ValueError as e:
-        print(f"Error saving files: {str(e)}")  # Debug errors
         # Clean up any saved files
         for filename in saved_files:
             file_storage.delete_file(filename)
@@ -145,12 +166,6 @@ def create_message(channel_id):
 
     # Create message
     data = request.form
-    print(f"[TIMESTAMP] 2. Form data: {data}")
-    
-    # Get current UTC time for comparison
-    current_utc = datetime.now(timezone.utc)
-    print(f"[TIMESTAMP] 3. Current UTC time: {current_utc.isoformat()}")
-    
     message = db.create_message(
         channel_id=channel_id,
         user_id=request.user_id,
@@ -160,7 +175,6 @@ def create_message(channel_id):
     )
     
     message_data = message.to_dict()
-    print(f"[TIMESTAMP] 4. Created message timestamp: {message_data['createdAt']}")
     socketio.emit('message.new', message_data, room=channel_id)
     return jsonify(message_data), 201
 
@@ -199,6 +213,7 @@ def handle_connect():
     try:
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
+            print('[SOCKET] Connection rejected - no auth header')
             raise ConnectionRefusedError('Authentication required')
             
         token = auth_header.split(' ')[1]
@@ -207,21 +222,13 @@ def handle_connect():
         
         # Store user_id in session for later use
         request.user_id = user_id
-        print(f'Client connected: {user_id}')  # Debug log
         
-        # Get and broadcast current user status
-        user = db.get_user_by_id(user_id)
-        if user:
-            status_update = {
-                'userId': user.id,
-                'status': user.status,
-                'lastActive': user.to_dict()['lastActive']
-            }
-            print(f"Broadcasting initial status: {status_update}")  # Debug log
-            socketio.emit('user.status', status_update)
+        # Join user to their personal room for DM notifications
+        join_room(user_id)
+        print(f'[SOCKET] Client {user_id} connected and joined personal room')
             
     except Exception as e:
-        print(f"Connection error: {str(e)}")  # Debug log
+        print(f"[SOCKET] Connection error: {str(e)}")
         raise ConnectionRefusedError(str(e))
 
 @socketio.on('disconnect')
@@ -319,18 +326,13 @@ def get_users():
 
 # Add this route to serve uploaded files
 @app.route('/uploads/<filename>')
-@auth_required
 def serve_file(filename):
-    """Serve uploaded files using Flask's send_static_file"""
-    print(f"[DEBUG] Serve file request received for: {filename}")  # Debug
-    print(f"[DEBUG] Static folder is: {app.static_folder}")  # Debug
-    print(f"[DEBUG] Current working directory: {os.getcwd()}")  # Debug
-    print(f"[DEBUG] Full path would be: {os.path.join(os.getcwd(), app.static_folder, filename)}")  # Debug
+    """Generate a presigned URL for the file"""
     try:
-        return app.send_static_file(filename)
-    except Exception as e:
-        print(f"[DEBUG] Error serving file {filename}: {str(e)}")  # Debug
-        return jsonify({'error': 'File not found'}), 404
+        url = file_storage.get_file_url(filename)
+        return jsonify({'url': url}), 200
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 404
 
 # Add the new status endpoint
 @app.route('/users/status', methods=['PUT'])

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Channel } from '../../types/chat';
 import { api } from '../../services/api';
 import { UserSelector } from '../Chat/UserSelector';
+import { socketService } from '../../services/socket';
 
 interface SidebarProps {
   currentChannel: string;
@@ -9,6 +10,7 @@ interface SidebarProps {
 }
 
 export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
+  const currentUserId = localStorage.getItem('userId');
   const [joinedChannels, setJoinedChannels] = useState<Channel[]>([]);
   const [availableChannels, setAvailableChannels] = useState<Channel[]>([]);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
@@ -16,28 +18,20 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
   const [error, setError] = useState('');
   const [showUserSelector, setShowUserSelector] = useState(false);
   const [dmChannels, setDmChannels] = useState<Channel[]>([]);
+  const [isDMCollapsed, setIsDMCollapsed] = useState(false);
+  const [isChannelsCollapsed, setIsChannelsCollapsed] = useState(false);
 
-  const fetchChannels = async () => {
+  const fetchChannels = useCallback(async () => {
     try {
       const [joined, available] = await Promise.all([
         api.channels.list(),
         api.channels.available()
       ]);
 
-      console.log('All joined channels:', joined.map(c => ({ name: c.name, type: c.type }))); // More detailed debug
-
-      // Separate DM channels from regular channels
-      const dms = joined.filter(channel => {
-        console.log(`Channel ${channel.name} has type: ${channel.type}`); // Debug each channel's type
-        return channel.type === 'dm';
-      });
+      const dms = joined.filter(channel => channel.type === 'dm');
       const regular = joined.filter(channel => channel.type !== 'dm' && channel.name !== 'general');
       const general = joined.find(channel => channel.name === 'general');
 
-      console.log('DM channels:', dms.map(c => ({ name: c.name, type: c.type })));
-      console.log('Regular channels:', regular.map(c => ({ name: c.name, type: c.type })));
-
-      // Sort regular channels
       const sortedRegular = general 
         ? [general, ...regular.sort((a, b) => a.name.localeCompare(b.name))]
         : regular.sort((a, b) => a.name.localeCompare(b.name));
@@ -46,7 +40,6 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
       setDmChannels(dms);
       setAvailableChannels(available);
 
-      // If no channel is selected, select general
       if (!currentChannel && sortedRegular.length > 0) {
         const generalChannel = sortedRegular.find(c => c.name === 'general');
         if (generalChannel) {
@@ -56,11 +49,40 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
     } catch (err) {
       console.error('Failed to fetch channels:', err);
     }
-  };
+  }, [currentChannel, onChannelSelect]);
 
+  // Split into two effects - one for initial fetch and one for socket listeners
   useEffect(() => {
     fetchChannels();
-  }, []);
+  }, [currentChannel]);
+
+  // Separate effect for socket listeners
+  useEffect(() => {
+    const handleNewChannel = (channel: Channel) => {
+      if (channel.type === 'dm') {
+        setDmChannels(prev => {
+          const exists = prev.some(c => c.id === channel.id);
+          if (exists) return prev;
+          
+          // Format the channel name before adding it
+          const otherMember = channel.members?.find(member => member.id !== currentUserId);
+          if (otherMember) {
+            channel.name = otherMember.name;
+          }
+          
+          return [...prev, channel];
+        });
+      } else {
+        fetchChannels();
+      }
+    };
+
+    socketService.onNewChannel(handleNewChannel);
+
+    return () => {
+      socketService.offNewChannel(handleNewChannel);
+    };
+  }, [fetchChannels]);
 
   const handleJoinChannel = async (channelId: string) => {
     try {
@@ -112,88 +134,127 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
   };
 
   const formatDMChannelName = (channel: Channel) => {
-    console.log('Formatting DM channel:', channel); // Debug log
     if (channel.type !== 'dm') return channel.name;
-    
-    // Find the other user in the members list
     const otherMember = channel.members?.find(member => member.id !== currentUserId);
-    console.log('Other member found:', otherMember); // Debug log
     return otherMember?.name || channel.name;
   };
 
-  const currentUserId = localStorage.getItem('userId');
+  const sortedDMChannels = [...dmChannels].sort((a, b) => {
+    const nameA = formatDMChannelName(a);
+    const nameB = formatDMChannelName(b);
+    return nameA.localeCompare(nameB);
+  });
 
   return (
-    <div className="w-64 bg-gray-800 text-white flex flex-col">
+    <div className="w-64 bg-gray-800 text-white flex flex-col h-full">
       <div className="p-4 border-b border-gray-700">
         <h1 className="text-xl font-bold">Chat App</h1>
       </div>
 
-      {/* Direct Messages */}
-      <div className="p-4">
-        <div className="flex justify-between items-center mb-2">
-          <h2 className="font-bold">Direct Messages</h2>
-          <button
-            onClick={() => setShowUserSelector(true)}
-            className="text-sm text-blue-400 hover:text-blue-300"
+      <div className="flex-1 overflow-y-auto">
+        {/* Direct Messages */}
+        <div className="p-4">
+          <div 
+            className="flex justify-between items-center mb-2 cursor-pointer"
+            onClick={() => setIsDMCollapsed(!isDMCollapsed)}
           >
-            +
-          </button>
-        </div>
-        <ul className="space-y-1">
-          {dmChannels.map(channel => (
-            <li 
-              key={channel.id}
-              className={`p-2 rounded cursor-pointer ${
-                channel.id === currentChannel ? 'bg-gray-700' : 'hover:bg-gray-700'
-              }`}
-              onClick={() => onChannelSelect(channel.id, formatDMChannelName(channel), channel.type === 'dm')}
-            >
-              {formatDMChannelName(channel)}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {/* Joined Channels */}
-      <div className="p-4">
-        <div className="flex justify-between items-center mb-2">
-          <h2 className="font-bold">Your Channels</h2>
-          <button
-            onClick={() => setShowCreateChannel(true)}
-            className="text-sm text-blue-400 hover:text-blue-300"
-          >
-            +
-          </button>
-        </div>
-        <ul className="space-y-1">
-          {joinedChannels.map(channel => (
-            <li 
-              key={channel.id}
-              className={`flex justify-between items-center p-2 rounded cursor-pointer ${
-                channel.id === currentChannel ? 'bg-gray-700' : 'hover:bg-gray-700'
-              }`}
-            >
-              <span 
-                onClick={() => onChannelSelect(channel.id, channel.name, false)}
-                className="flex-1"
-              >
-                # {channel.name}
+            <h2 className="font-bold flex items-center">
+              <span className="transform transition-transform duration-200 inline-block mr-2">
+                {isDMCollapsed ? '▸' : '▾'}
               </span>
-              {channel.name !== 'general' && (
-                <button
-                  onClick={() => handleLeaveChannel(channel.id)}
-                  className="text-sm text-gray-400 hover:text-white"
+              Direct Messages
+            </h2>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowUserSelector(true);
+              }}
+              className="text-sm text-blue-400 hover:text-blue-300"
+            >
+              +
+            </button>
+          </div>
+          {!isDMCollapsed && (
+            <ul className="space-y-1">
+              {sortedDMChannels.map(channel => (
+                <li 
+                  key={channel.id}
+                  className={`p-2 rounded cursor-pointer ${
+                    channel.id === currentChannel ? 'bg-gray-700' : 'hover:bg-gray-700'
+                  }`}
+                  onClick={() => onChannelSelect(channel.id, formatDMChannelName(channel), true)}
                 >
-                  Leave
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
+                  {formatDMChannelName(channel)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Joined Channels */}
+        <div className="p-4">
+          <div 
+            className="flex justify-between items-center mb-2 cursor-pointer"
+            onClick={() => setIsChannelsCollapsed(!isChannelsCollapsed)}
+          >
+            <h2 className="font-bold flex items-center">
+              <span className="transform transition-transform duration-200 inline-block mr-2">
+                {isChannelsCollapsed ? '▸' : '▾'}
+              </span>
+              Your Channels
+            </h2>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowCreateChannel(true);
+              }}
+              className="text-sm text-blue-400 hover:text-blue-300"
+            >
+              +
+            </button>
+          </div>
+          {!isChannelsCollapsed && (
+            <ul className="space-y-1">
+              {joinedChannels.map(channel => (
+                <li 
+                  key={channel.id}
+                  className={`p-2 rounded cursor-pointer ${
+                    channel.id === currentChannel ? 'bg-gray-700' : 'hover:bg-gray-700'
+                  }`}
+                  onClick={() => onChannelSelect(channel.id, channel.name, false)}
+                >
+                  #{channel.name}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Available Channels */}
+        {availableChannels.length > 0 && (
+          <div className="p-4 border-t border-gray-700">
+            <h2 className="font-bold mb-2">Available Channels</h2>
+            <ul className="space-y-1">
+              {availableChannels.map(channel => (
+                <li 
+                  key={channel.id}
+                  className="p-2 rounded hover:bg-gray-700 cursor-pointer flex justify-between items-center"
+                >
+                  #{channel.name}
+                  <button
+                    onClick={() => handleJoinChannel(channel.id)}
+                    className="text-sm text-blue-400 hover:text-blue-300"
+                  >
+                    Join
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
-      {/* Create Channel Modal */}
+      {/* Keep modals outside the scrollable area */}
       {showCreateChannel && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
           <div className="bg-white rounded-lg p-6 w-80">
@@ -233,31 +294,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
           </div>
         </div>
       )}
-
-      {/* Available Channels */}
-      {availableChannels.length > 0 && (
-        <div className="p-4 border-t border-gray-700">
-          <h2 className="font-bold mb-2">Available Channels</h2>
-          <ul className="space-y-1">
-            {availableChannels.map(channel => (
-              <li 
-                key={channel.id}
-                className="flex justify-between items-center p-2 rounded hover:bg-gray-700"
-              >
-                <span># {channel.name}</span>
-                <button
-                  onClick={() => handleJoinChannel(channel.id)}
-                  className="text-sm text-blue-400 hover:text-blue-300"
-                >
-                  Join
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* User Selector Modal */}
+      
       {showUserSelector && (
         <UserSelector
           onClose={() => setShowUserSelector(false)}

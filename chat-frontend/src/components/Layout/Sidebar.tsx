@@ -21,6 +21,8 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels }: SidebarPr
   const [dmChannels, setDmChannels] = useState<Channel[]>([]);
   const [isDMCollapsed, setIsDMCollapsed] = useState(false);
   const [isChannelsCollapsed, setIsChannelsCollapsed] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [joiningChannelId, setJoiningChannelId] = useState<string | null>(null);
 
   const fetchChannels = useCallback(async () => {
     try {
@@ -86,11 +88,20 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels }: SidebarPr
   }, [fetchChannels]);
 
   const handleJoinChannel = async (channelId: string) => {
+    setJoiningChannelId(channelId);
     try {
       await api.channels.join(channelId);
       await fetchChannels();
+      // Find the channel name from available channels
+      const channel = availableChannels.find(c => c.id === channelId);
+      if (channel) {
+        // Automatically select the joined channel
+        onChannelSelect(channelId, channel.name, false);
+      }
     } catch (err) {
       console.error('Failed to join channel:', err);
+    } finally {
+      setJoiningChannelId(null);
     }
   };
 
@@ -106,14 +117,19 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels }: SidebarPr
   const handleCreateChannel = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsCreating(true);
     
     try {
-      await api.channels.create({ name: newChannelName });
-      setNewChannelName('');
+      const channel = await api.channels.create({ name: newChannelName });
       setShowCreateChannel(false);
+      setNewChannelName('');
       await fetchChannels();
+      // Automatically select the new channel
+      onChannelSelect(channel.id, channel.name, false);
     } catch (err: any) {
       setError(err.message || 'Failed to create channel');
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -257,8 +273,8 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels }: SidebarPr
 
       {/* Keep modals outside the scrollable area */}
       {showCreateChannel && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 w-80">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-80 relative z-50">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Create Channel</h3>
             {error && (
               <div className="mb-4 text-red-500 text-sm">{error}</div>
@@ -287,8 +303,9 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels }: SidebarPr
                 <button
                   type="submit"
                   className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  disabled={isCreating}
                 >
-                  Create
+                  {isCreating ? 'Creating...' : 'Create'}
                 </button>
               </div>
             </form>

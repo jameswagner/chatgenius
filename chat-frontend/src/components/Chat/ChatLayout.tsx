@@ -34,6 +34,8 @@ export const ChatLayout = () => {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [searchResults, setSearchResults] = useState<Message[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isLoadingChannel, setIsLoadingChannel] = useState(false);
+  const [isLoadingSearchResults, setIsLoadingSearchResults] = useState(false);
   const [collapsedChannels, setCollapsedChannels] = useState<Set<string>>(new Set());
   const [channelNames, setChannelNames] = useState<{ [channelId: string]: string }>({});
   const navigate = useNavigate();
@@ -359,11 +361,20 @@ export const ChatLayout = () => {
         channels={channels}
       />
       <div className="flex-1 flex flex-col">
-        <div className="p-4 border-b flex justify-between items-center bg-white">
-          <div className="flex-1 max-w-2xl">
-            <SearchBar onResultsFound={handleSearchResults} />
+        <div className="p-4 border-b flex items-center bg-white">
+          <div className="w-48">
+            {currentChannel && (
+              <h2 className="font-bold text-lg">
+                {currentChannelType === 'dm' ? currentChannelName : `#${currentChannelName}`}
+              </h2>
+            )}
           </div>
-          <div className="flex items-center gap-4 ml-4">
+          <div className="flex-1 flex justify-center">
+            <div className="w-96">
+              <SearchBar onResultsFound={handleSearchResults} />
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
             <StatusSelector />
             <button
               onClick={handleLogout}
@@ -565,12 +576,26 @@ export const ChatLayout = () => {
                 })()}
               </div>
             ) : (
-              <MessageList 
-                channelId={currentChannel}
-                messages={messages}
-                setMessages={setMessages}
-                currentChannelName={currentChannelName}
-              />
+              <>
+                {isLoadingChannel ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <svg className="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span className="text-gray-500">Loading messages...</span>
+                    </div>
+                  </div>
+                ) : (
+                  <MessageList 
+                    channelId={currentChannel}
+                    messages={messages}
+                    setMessages={setMessages}
+                    currentChannelName={currentChannelName}
+                  />
+                )}
+              </>
             )}
 
             {!isSearching && (
@@ -578,6 +603,7 @@ export const ChatLayout = () => {
                 channelId={currentChannel}
                 onSendMessage={handleSendMessage}
                 currentChannelName={currentChannelName}
+                isDM={currentChannelType === 'dm'}
               />
             )}
           </>

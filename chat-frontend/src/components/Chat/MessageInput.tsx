@@ -7,9 +7,10 @@ interface MessageInputProps {
   threadId?: string;
   placeholder?: string;
   currentChannelName: string;
+  isDM?: boolean;
 }
 
-export const MessageInput = ({ channelId, onSendMessage, threadId, currentChannelName, placeholder }: MessageInputProps) => {
+export const MessageInput = ({ channelId, onSendMessage, threadId, placeholder, currentChannelName, isDM = false }: MessageInputProps) => {
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -75,7 +76,7 @@ export const MessageInput = ({ channelId, onSendMessage, threadId, currentChanne
           type="text"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          placeholder={placeholder || `Message ${currentChannelName}`}
+          placeholder={placeholder || `Message ${isDM ? '' : '#'}${currentChannelName}`}
           className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:border-blue-500"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !isDisabled) {

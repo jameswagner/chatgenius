@@ -129,13 +129,7 @@ export const api = {
     create: async (channelId: string, data: FormData | { content: string; threadId?: string }): Promise<Message> => {
       const response = await client.post(
         `/channels/${channelId}/messages`,
-        data,
-        // Add this config when data is FormData
-        data instanceof FormData ? {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        } : undefined
+        data
       );
       return snakeToCamel(response.data);
     },

@@ -1,10 +1,10 @@
 from flask import Blueprint, request, jsonify
 from ..auth.auth_service import AuthService
-from ..db.sqlite import SQLiteDB
+from ..db.ddb import DynamoDB
 from flask import current_app
 
 auth_bp = Blueprint('auth', __name__)
-db = SQLiteDB()
+db = DynamoDB()
 auth_service = AuthService(db, current_app.config['SECRET_KEY'])
 
 @auth_bp.route('/register', methods=['POST'])

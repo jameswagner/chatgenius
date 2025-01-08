@@ -2,12 +2,13 @@ from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from datetime import datetime, timezone
-from app.db.sqlite import SQLiteDB
+from app.db.ddb import DynamoDB
 from app.auth.auth_service import AuthService, auth_required
 import os
 import jwt
 from werkzeug.utils import secure_filename
 from app.storage.file_storage import FileStorage
+from scripts.create_table import create_chat_table
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
@@ -21,7 +22,11 @@ CORS(app, resources={
 })
 app.static_folder = 'uploads'  # This tells Flask where to find static files
 
-db = SQLiteDB()
+db = DynamoDB()
+
+# Create table if it doesn't exist
+create_chat_table()
+
 auth_service = AuthService(db, app.config['SECRET_KEY'])
 
 file_storage = FileStorage()
@@ -134,7 +139,7 @@ def create_message(channel_id):
     channel = db.get_channel_by_id(channel_id)
     if not channel:
         return jsonify({'error': 'Channel not found'}), 404
-        
+         
     # For DM channels, we'll need to notify the other user about the channel
     if channel.type == 'dm':
         message_count = db.get_channel_message_count(channel_id)
@@ -146,32 +151,13 @@ def create_message(channel_id):
                 print(f'[SOCKET] Emitting channel.new to user {other_user_id}')
                 socketio.emit('channel.new', channel_data, room=other_user_id)
 
-    # Handle file uploads
-    files = request.files.getlist('files')
-    if len(files) > MAX_FILES:
-        return jsonify({'error': f'Maximum {MAX_FILES} files allowed'}), 400
-
-    # Save files
-    saved_files = []
-    try:
-        for file in files:
-            if file.filename:
-                filename = file_storage.save_file(file, MAX_FILE_SIZE)
-                saved_files.append(filename)
-    except ValueError as e:
-        # Clean up any saved files
-        for filename in saved_files:
-            file_storage.delete_file(filename)
-        return jsonify({'error': str(e)}), 400
-
     # Create message
-    data = request.form
+    data = request.get_json()
     message = db.create_message(
         channel_id=channel_id,
         user_id=request.user_id,
         content=data['content'],
-        thread_id=data.get('thread_id'),
-        attachments=saved_files
+        thread_id=data.get('threadId')
     )
     
     message_data = message.to_dict()

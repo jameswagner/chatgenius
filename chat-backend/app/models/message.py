@@ -25,6 +25,6 @@ class Message:
                          if isinstance(self.created_at, datetime) 
                          else self.created_at),
             'attachments': self.attachments,
-            'user': self.user,
+            'user': self.user.to_dict() if hasattr(self.user, 'to_dict') else self.user,
             'reactions': self.reactions
         } 

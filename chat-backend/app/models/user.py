@@ -7,10 +7,10 @@ class User:
     id: str
     email: str
     name: str
-    password: str
-    created_at: datetime
     status: str = 'offline'
     last_active: Optional[datetime] = None
+    created_at: datetime = None
+    password: Optional[str] = None  # Make password optional since we don't always need it
 
     def to_dict(self):
         # Convert string timestamps to datetime objects if needed
@@ -32,5 +32,5 @@ class User:
             'email': self.email,
             'status': self.status,
             'lastActive': self.last_active.isoformat() if self.last_active else None,
-            'createdAt': self.created_at.isoformat()
+            'createdAt': self.created_at.isoformat() if self.created_at else None
         } 

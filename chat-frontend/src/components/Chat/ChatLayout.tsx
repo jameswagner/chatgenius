@@ -111,27 +111,83 @@ export const ChatLayout = () => {
       socketService.joinChannel(currentChannel);
       
       const handleNewMessage = (message: Message) => {
+        console.log('\nNew message received:', {
+          messageId: message.id,
+          channelId: message.channelId,
+          userId: message.userId,
+          content: message.content,
+          createdAt: message.createdAt
+        });
+        console.log('Current state:', {
+          currentChannel,
+          currentUserId: localStorage.getItem('userId'),
+          channels: channels.map(c => ({
+            id: c.id,
+            name: c.name,
+            lastRead: c.lastRead
+          }))
+        });
+        
+        // Cache user data
+        if (message.user) {
+          userCache.current[message.userId] = message.user;
+        }
+
+        const currentUserId = localStorage.getItem('userId');
+        const isOwnMessage = message.userId === currentUserId;
+        console.log('Message ownership:', { isOwnMessage, messageUserId: message.userId, currentUserId });
+
+        // If this is for the current channel, add it to messages
         if (message.channelId === currentChannel) {
-          // If it's a thread reply, update the parent message's thread count
-          if (message.threadId && message.threadId !== message.id) {
-            setMessages(prev => prev.map(m => {
-              if (m.id === message.threadId) {
-                return {
-                  ...m,
-                  replyCount: (m.replyCount || 0) + 1
-                };
-              }
-              return m;
-            }));
+          console.log('Message is for current channel, adding to messages');
+          setMessages(prev => [...prev, message]);
+          // Only mark as read if it's our own message or we're viewing it
+          if (isOwnMessage) {
+            console.log('Own message, no need to mark as read');
+          } else {
+            console.log('Other user message in current channel, marking as read');
+            api.channels.markRead(message.channelId)
+              .then(() => {
+                console.log('Channel marked as read:', message.channelId);
+                // Update channel list to reflect read status
+                setChannels(prevChannels => {
+                  const updatedChannels = prevChannels.map(channel => 
+                    channel.id === message.channelId 
+                      ? { ...channel, lastRead: new Date().toISOString() }
+                      : channel
+                  );
+                  console.log('Updated channels after marking as read:', 
+                    updatedChannels.map(c => ({
+                      id: c.id,
+                      name: c.name,
+                      lastRead: c.lastRead
+                    }))
+                  );
+                  return updatedChannels;
+                });
+              })
+              .catch(err => console.error('Failed to mark channel as read:', err));
           }
-          // Add the new message, preserving any cached user data
-          setMessages(prev => {
-            const cachedUser = userCache.current[message.userId];
-            return [...prev, {
-              ...message,
-              user: cachedUser || message.user
-            }];
+        } else if (!isOwnMessage) {
+          // Only mark other channels as unread if the message is from someone else
+          console.log('Message is from another user in different channel, marking as unread');
+          setChannels(prevChannels => {
+            const updatedChannels = prevChannels.map(channel => 
+              channel.id === message.channelId 
+                ? { ...channel, lastRead: undefined }
+                : channel
+            );
+            console.log('Updated channels after marking as unread:', 
+              updatedChannels.map(c => ({
+                id: c.id,
+                name: c.name,
+                lastRead: c.lastRead
+              }))
+            );
+            return updatedChannels;
           });
+        } else {
+          console.log('Own message in different channel, no unread update needed');
         }
       };
 
@@ -217,16 +273,53 @@ export const ChatLayout = () => {
     };
   }, []);
 
-  const handleChannelSelect = (channelId: string, channelName: string, isDirectMessage: boolean) => {
-    setCurrentChannel(channelId);
-    setCurrentChannelName(channelName);
-    setCurrentChannelType(isDirectMessage ? 'dm' : 'public');
-    setMessages([]);
+  const handleChannelSelect = async (channelId: string, channelName: string, isDirectMessage: boolean) => {
+    console.log('Selecting channel:', { channelId, channelName, isDirectMessage });
+    setIsLoadingChannel(true);
+    try {
+      // Mark previous channel as read before switching
+      if (currentChannel && currentChannel !== channelId) {
+        console.log('Marking previous channel as read:', currentChannel);
+        await api.channels.markRead(currentChannel);
+      }
+      
+      // Store channel info
+      localStorage.setItem('currentChannel', channelId);
+      localStorage.setItem('currentChannelName', channelName);
+      localStorage.setItem('currentChannelType', isDirectMessage ? 'dm' : 'public');
+      
+      setCurrentChannel(channelId);
+      setCurrentChannelName(channelName);
+      setCurrentChannelType(isDirectMessage ? 'dm' : 'public');
+      
+      // Load messages
+      const messages = await api.messages.list(channelId);
+      console.log('Loaded messages:', messages);
+      setMessages(messages);
 
-    // Persist channel selection
-    localStorage.setItem('currentChannel', channelId);
-    localStorage.setItem('currentChannelName', channelName);
-    localStorage.setItem('currentChannelType', isDirectMessage ? 'dm' : 'public');
+      // Mark new channel as read
+      console.log('Marking new channel as read:', channelId);
+      await api.channels.markRead(channelId);
+      
+      // Update channel list to reflect read status
+      setChannels(prevChannels => {
+        const updatedChannels = prevChannels.map(channel => 
+          channel.id === channelId 
+            ? { ...channel, lastRead: new Date().toISOString() }
+            : channel
+        );
+        console.log('Updated channels after marking as read:', updatedChannels);
+        return updatedChannels;
+      });
+      
+      // Join socket room for this channel
+      socketService.joinChannel(channelId);
+      
+    } catch (error) {
+      console.error('Failed to load channel:', error);
+    } finally {
+      setIsLoadingChannel(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -359,6 +452,7 @@ export const ChatLayout = () => {
         currentChannel={currentChannel || ''}
         onChannelSelect={handleChannelSelect}
         channels={channels}
+        messages={messages}
       />
       <div className="flex-1 flex flex-col">
         <div className="p-4 border-b flex items-center bg-white">

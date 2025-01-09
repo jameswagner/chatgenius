@@ -8,14 +8,15 @@ class Message:
     content: str
     user_id: str
     channel_id: str
-    thread_id: str
     created_at: str | datetime
-    attachments: List[str] = field(default_factory=list)
-    user: Optional[dict] = None
-    reactions: Dict[str, List[str]] = field(default_factory=dict)
-    edited_at: Optional[str | datetime] = None
+    thread_id: Optional[str] = None
+    edited_at: Optional[str] = None
     is_edited: bool = False
-    edit_history: List[dict] = field(default_factory=list)
+    version: int = 1
+    reactions: Dict[str, List[str]] = field(default_factory=dict)
+    attachments: List[str] = field(default_factory=list)
+    reply_count: Optional[int] = None
+    user: Optional[dict] = None
 
     def to_dict(self):
         return {
@@ -33,6 +34,5 @@ class Message:
             'editedAt': (self.edited_at.strftime('%Y-%m-%d %H:%M:%S')
                         if isinstance(self.edited_at, datetime)
                         else self.edited_at),
-            'isEdited': self.is_edited,
-            'editHistory': self.edit_history
+            'isEdited': self.is_edited
         } 

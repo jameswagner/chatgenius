@@ -33,6 +33,8 @@ export interface Channel {
   name: string;
   type: string;
   members?: User[];
-  created_by?: string;
-  created_at?: string;
+  createdBy?: string;
+  createdAt?: string;
+  lastRead?: string;
+  unreadCount?: number;
 } 

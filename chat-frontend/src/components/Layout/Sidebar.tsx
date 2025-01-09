@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Channel } from '../../types/chat';
+import { Channel, Message } from '../../types/chat';
 import { api } from '../../services/api';
 import { UserSelector } from '../Chat/UserSelector';
 import { socketService } from '../../services/socket';
@@ -8,9 +8,10 @@ export interface SidebarProps {
   currentChannel: string;
   onChannelSelect: (channelId: string, channelName: string, isDirectMessage: boolean) => void;
   channels: Channel[];
+  messages: Message[];
 }
 
-export const Sidebar = ({ currentChannel, onChannelSelect, channels }: SidebarProps) => {
+export const Sidebar = ({ currentChannel, onChannelSelect, channels, messages }: SidebarProps) => {
   const currentUserId = localStorage.getItem('userId');
   const [joinedChannels, setJoinedChannels] = useState<Channel[]>([]);
   const [availableChannels, setAvailableChannels] = useState<Channel[]>([]);
@@ -162,6 +163,16 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels }: SidebarPr
     return nameA.localeCompare(nameB);
   });
 
+  const hasUnreadMessages = (channel: Channel): boolean => {
+    console.log('\nChecking unread status for channel:', {
+      channelId: channel.id,
+      channelName: channel.name,
+      unreadCount: channel.unreadCount
+    });
+    
+    return (channel.unreadCount || 0) > 0;
+  };
+
   return (
     <div className="w-64 bg-gray-800 text-white flex flex-col h-full">
       <div className="p-4 border-b border-gray-700">
@@ -196,12 +207,17 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels }: SidebarPr
               {sortedDMChannels.map(channel => (
                 <li 
                   key={channel.id}
-                  className={`p-2 rounded cursor-pointer ${
+                  className={`p-2 rounded cursor-pointer flex items-center justify-between ${
                     channel.id === currentChannel ? 'bg-gray-700' : 'hover:bg-gray-700'
                   }`}
                   onClick={() => onChannelSelect(channel.id, formatDMChannelName(channel), true)}
                 >
-                  {formatDMChannelName(channel)}
+                  <div className="flex items-center gap-2">
+                    <span>{formatDMChannelName(channel)}</span>
+                    {channel.id !== currentChannel && hasUnreadMessages(channel) && (
+                      <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -235,12 +251,17 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels }: SidebarPr
               {joinedChannels.map(channel => (
                 <li 
                   key={channel.id}
-                  className={`p-2 rounded cursor-pointer ${
+                  className={`p-2 rounded cursor-pointer flex items-center justify-between ${
                     channel.id === currentChannel ? 'bg-gray-700' : 'hover:bg-gray-700'
                   }`}
                   onClick={() => onChannelSelect(channel.id, channel.name, false)}
                 >
-                  #{channel.name}
+                  <div className="flex items-center gap-2">
+                    <span>#{channel.name}</span>
+                    {channel.id !== currentChannel && hasUnreadMessages(channel) && (
+                      <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>

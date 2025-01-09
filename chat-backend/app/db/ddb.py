@@ -120,23 +120,20 @@ class DynamoDB:
         return User(**self._clean_item(item))
 
     def _clean_item(self, item: dict) -> dict:
-        """Remove DynamoDB-specific attributes from items"""
-        # Remove internal DynamoDB attributes
-        dynamo_attrs = ['PK', 'SK', 'GSI1PK', 'GSI1SK', 'GSI2PK', 'GSI2SK', 'GSI3PK', 'GSI3SK', 'display_name']
-        cleaned = {k: v for k, v in item.items() if k not in dynamo_attrs}
-        
-        # Determine item type and clean accordingly
-        if 'type' in cleaned:
-            if cleaned['type'] == 'user':
-                # Remove user-specific internal attributes
-                user_internal_attrs = ['type']
-                cleaned = {k: v for k, v in cleaned.items() if k not in user_internal_attrs}
-            else:
-                # For all channels (including DMs), ensure required fields
-                cleaned.setdefault('members', [])
-                cleaned.setdefault('created_by', None)
-                cleaned.setdefault('created_at', self._now())
-        
+        """Clean DynamoDB item for model creation"""
+        cleaned = {}
+        for key, value in item.items():
+            # Skip DynamoDB system attributes
+            if key in ['PK', 'SK', 'GSI1PK', 'GSI1SK', 'GSI2PK', 'GSI2SK']:
+                continue
+                
+            # Only keep type field for channels
+            if key == 'type' and not ('CHANNEL#' in item.get('PK', '') and '#METADATA' in item.get('SK', '')):
+                continue
+                
+            # Keep all other fields
+            cleaned[key] = value
+            
         return cleaned
 
     def create_channel(self, name: str, type: str = 'public', created_by: str = None, other_user_id: str = None) -> Channel:
@@ -187,10 +184,29 @@ class DynamoDB:
             'SK': f'MEMBER#{user_id}',
             'GSI2PK': f'USER#{user_id}',
             'GSI2SK': f'CHANNEL#{channel_id}',
-            'joined_at': timestamp
+            'joined_at': timestamp,
+            'last_read': timestamp  # Initialize last_read
         })
 
+    def mark_channel_read(self, channel_id: str, user_id: str) -> None:
+        """Mark all current messages in a channel as read for a user"""
+        timestamp = self._now()
+        print(f"\n[DB] Marking channel {channel_id} as read for user {user_id} at {timestamp}")
+        
+        # Update the member's last_read timestamp
+        self.table.update_item(
+            Key={
+                'PK': f'CHANNEL#{channel_id}',
+                'SK': f'MEMBER#{user_id}'
+            },
+            UpdateExpression='SET last_read = :ts',
+            ExpressionAttributeValues={
+                ':ts': timestamp
+            }
+        )
+
     def get_channels_for_user(self, user_id: str) -> List[Channel]:
+        print(f"\n[DB] Getting channels for user {user_id}")
         # Query GSI2 to get all channels for user
         response = self.table.query(
             IndexName='GSI2',
@@ -198,10 +214,12 @@ class DynamoDB:
         )
         
         channel_ids = [item['GSI2SK'].split('#')[1] for item in response['Items']]
+        
         channels = []
         
         # Get channel details
         for channel_id in channel_ids:
+            # Get channel metadata
             response = self.table.get_item(
                 Key={
                     'PK': f'CHANNEL#{channel_id}',
@@ -209,23 +227,64 @@ class DynamoDB:
                 }
             )
             if 'Item' in response:
-                channel = Channel(**self._clean_item(response['Item']))
-                if channel.type == 'dm':
-                    channel.members = self.get_channel_members(channel_id)
+                channel_data = self._clean_item(response['Item'])
+                print(f"\n[DB] Processing channel '{channel_data['name']}' ({channel_id})")
+                
+                # Get member data including last_read
+                member_response = self.table.get_item(
+                    Key={
+                        'PK': f'CHANNEL#{channel_id}',
+                        'SK': f'MEMBER#{user_id}'
+                    }
+                )
+                
+                last_read = None
+                if 'Item' in member_response:
+                    last_read = member_response['Item'].get('last_read')
+                    print(f"[DB] Found last_read for channel '{channel_data['name']}': {last_read}")
+                
+                # Calculate unread count
+                unread_count = 0
+                if last_read:
+                    # Query messages after last_read
+                    messages_response = self.table.query(
+                        KeyConditionExpression='PK = :pk AND SK > :last_read',
+                        ExpressionAttributeValues={
+                            ':pk': f'CHANNEL#{channel_id}',
+                            ':last_read': f'MSG#{last_read}'
+                        }
+                    )
+                    
+                    # Only count messages from other users
+                    unread_count = sum(1 for item in messages_response.get('Items', [])
+                                     if item.get('userId') != user_id)
+                    print(f"[DB] Channel '{channel_data['name']}' unread count: {unread_count}")
+                    print(f"[DB] Messages after last_read in '{channel_data['name']}': {[item['SK'] for item in messages_response.get('Items', [])]}")
+                else:
+                    print(f"[DB] No last_read timestamp for channel '{channel_data['name']}'")
+                
+                # Get members if DM channel
+                members = []
+                if channel_data['type'] == 'dm':
+                    members = self.get_channel_members(channel_id)
+                
+                channel = Channel(
+                    id=channel_id,
+                    name=channel_data['name'],
+                    type=channel_data['type'],
+                    created_by=channel_data['created_by'],
+                    created_at=channel_data['created_at'],
+                    members=members,
+                    last_read=last_read,
+                    unread_count=unread_count
+                )
                 channels.append(channel)
                 
+        print(f"\n[DB] Found {len(channels)} channels for user {user_id}: {[c.name for c in channels]}")
         return channels
 
     def create_message(self, channel_id: str, user_id: str, content: str, thread_id: str = None, attachments: List[str] = None) -> Message:
-        print('DEBUG_ATTACH: DDB: Creating message')
-        print('DEBUG_ATTACH: DDB: Input params:', {
-            'channel_id': channel_id,
-            'user_id': user_id,
-            'content': content,
-            'thread_id': thread_id,
-            'attachments': attachments
-        })
-        
+        """Create a new message"""
         message_id = self._generate_id()
         timestamp = self._now()
         
@@ -238,34 +297,23 @@ class DynamoDB:
             'channel_id': channel_id,
             'user_id': user_id,
             'content': content,
-            'thread_id': thread_id or message_id,
             'created_at': timestamp,
-            'attachments': attachments or []
+            'version': 1
         }
         
-        print('DEBUG_ATTACH: DDB: Item to be saved:', item)
-        
-        # Add words to search index
-        words = set(content.lower().split())
-        for word in words:
-            self.table.put_item(Item={
-                'PK': f'WORD#{word}',
-                'SK': f'MSG#{timestamp}#{message_id}',
-                'GSI3PK': f'CONTENT#{word}',
-                'GSI3SK': f'TS#{timestamp}',
-                'message_id': message_id
-            })
-        
+        if thread_id:
+            item['thread_id'] = thread_id
+            
+        if attachments:
+            item['attachments'] = attachments
+
         self.table.put_item(Item=item)
-        print('DEBUG_ATTACH: DDB: Item saved successfully')
         
-        # Create message object and attach user info
         message = Message(**self._clean_item(item))
         user = self.get_user_by_id(user_id)
         if user:
             message.user = user
             
-        print('DEBUG_ATTACH: DDB: Final message object:', message.to_dict())
         return message
 
     def _get_message_reactions(self, message_id: str) -> dict:
@@ -323,7 +371,7 @@ class DynamoDB:
         messages = []
         for item in response['Items']:
             cleaned = self._clean_item(item)
-            print(f"[DB] Processing message {cleaned['id']}, created_at: {cleaned['created_at']}")
+            
             cleaned['reactions'] = self._get_message_reactions(cleaned['id'])
             message = Message(**cleaned)
             user = self.get_user_by_id(message.user_id)
@@ -331,8 +379,6 @@ class DynamoDB:
                 message.user = user
             messages.append(message)
         
-        print(f"[DB] Returning {len(messages)} messages")
-        print("[DB] Message order:", [(msg.id, msg.created_at) for msg in messages[:3]])
         return messages
 
     def add_reaction(self, message_id: str, user_id: str, emoji: str) -> Reaction:

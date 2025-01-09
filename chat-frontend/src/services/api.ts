@@ -95,6 +95,10 @@ export const api = {
 
     leave: async (channelId: string): Promise<void> => {
       await client.post(`/channels/${channelId}/leave`);
+    },
+
+    markRead: async (channelId: string): Promise<void> => {
+      await client.post(`/channels/${channelId}/read`);
     }
   },
 

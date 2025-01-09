@@ -157,63 +157,44 @@ class SQLiteDB:
                 channels.append(Channel(**data))
             return channels
 
-    def create_message(self, channel_id: str, user_id: str, content: str, 
-                      thread_id: str = None, attachments: List[str] = None) -> Message:
-        print('DEBUG_ATTACH: DB: Creating message')
-        print('DEBUG_ATTACH: DB: Attachments received:', attachments)
-        
+    def create_message(self, channel_id: str, user_id: str, content: str, thread_id: str = None, attachments: List[str] = None) -> Message:
+        """Create a new message"""
+        timestamp = datetime.utcnow().isoformat()
         message_id = str(uuid.uuid4())
-        actual_thread_id = thread_id or message_id
         
-        current_utc = datetime.now(timezone.utc)
+        # Save message
+        self._get_connection().execute('''
+            INSERT INTO messages (id, channel_id, user_id, content, thread_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (message_id, channel_id, user_id, content, thread_id, timestamp))
         
-        with self._get_connection() as conn:
-            # Insert message
-            conn.execute(
-                """
-                INSERT INTO messages (id, channel_id, user_id, content, thread_id, created_at) 
-                VALUES (?, ?, ?, ?, ?, datetime('now'))
-                """,
-                (message_id, channel_id, user_id, content, actual_thread_id)
-            )
+        # Save attachments if any
+        if attachments:
+            for attachment in attachments:
+                self._get_connection().execute('''
+                    INSERT INTO attachments (id, message_id, filename)
+                    VALUES (?, ?, ?)
+                ''', (str(uuid.uuid4()), message_id, attachment))
+        
+        self._get_connection().commit()
+        
+        # Get message data
+        data = {
+            'id': message_id,
+            'channel_id': channel_id,
+            'user_id': user_id,
+            'content': content,
+            'thread_id': thread_id,
+            'created_at': timestamp,
+            'attachments': attachments or []
+        }
+        
+        message = Message(**data)
+        user = self.get_user_by_id(user_id)
+        if user:
+            message.user = user
             
-            # Get the inserted timestamp
-            row = conn.execute(
-                "SELECT created_at FROM messages WHERE id = ?", 
-                (message_id,)
-            ).fetchone()
-            
-            # Save attachments
-            if attachments:
-                print('DEBUG_ATTACH: DB: Saving attachments:', attachments)
-                for filename in attachments:
-                    conn.execute(
-                        "INSERT INTO attachments (id, message_id, filename) VALUES (?, ?, ?)",
-                        (str(uuid.uuid4()), message_id, filename)
-                    )
-                print('DEBUG_ATTACH: DB: Attachments saved')
-
-            # Get message with attachments and user status
-            row = conn.execute("""
-                SELECT m.*, u.name as user_name, u.status as user_status,
-                       GROUP_CONCAT(a.filename) as attachment_files
-                FROM messages m
-                LEFT JOIN users u ON m.user_id = u.id
-                LEFT JOIN attachments a ON m.id = a.message_id
-                WHERE m.id = ?
-                GROUP BY m.id
-            """, (message_id,)).fetchone()
-            
-            data = dict(row)
-            data['user'] = {
-                'name': data.pop('user_name'),
-                'status': data.pop('user_status', 'offline')  # Include user status
-            }
-            data['attachments'] = (data.pop('attachment_files') or '').split(',')
-            if data['attachments'] == ['']: data['attachments'] = []
-            
-            print('DEBUG_ATTACH: DB: Final message data:', data)
-            return Message(**data)
+        return message
 
     def get_messages(self, channel_id: str) -> List[Message]:
         with self._get_connection() as conn:

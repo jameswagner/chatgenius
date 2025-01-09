@@ -191,7 +191,6 @@ class DynamoDB:
     def mark_channel_read(self, channel_id: str, user_id: str) -> None:
         """Mark all current messages in a channel as read for a user"""
         timestamp = self._now()
-        print(f"\n[DB] Marking channel {channel_id} as read for user {user_id} at {timestamp}")
         
         # Update the member's last_read timestamp
         self.table.update_item(
@@ -206,7 +205,6 @@ class DynamoDB:
         )
 
     def get_channels_for_user(self, user_id: str) -> List[Channel]:
-        print(f"\n[DB] Getting channels for user {user_id}")
         # Query GSI2 to get all channels for user
         response = self.table.query(
             IndexName='GSI2',
@@ -228,7 +226,6 @@ class DynamoDB:
             )
             if 'Item' in response:
                 channel_data = self._clean_item(response['Item'])
-                print(f"\n[DB] Processing channel '{channel_data['name']}' ({channel_id})")
                 
                 # Get member data including last_read
                 member_response = self.table.get_item(
@@ -241,7 +238,6 @@ class DynamoDB:
                 last_read = None
                 if 'Item' in member_response:
                     last_read = member_response['Item'].get('last_read')
-                    print(f"[DB] Found last_read for channel '{channel_data['name']}': {last_read}")
                 
                 # Calculate unread count
                 unread_count = 0
@@ -258,10 +254,7 @@ class DynamoDB:
                     # Only count messages from other users
                     unread_count = sum(1 for item in messages_response.get('Items', [])
                                      if item.get('userId') != user_id)
-                    print(f"[DB] Channel '{channel_data['name']}' unread count: {unread_count}")
-                    print(f"[DB] Messages after last_read in '{channel_data['name']}': {[item['SK'] for item in messages_response.get('Items', [])]}")
-                else:
-                    print(f"[DB] No last_read timestamp for channel '{channel_data['name']}'")
+
                 
                 # Get members if DM channel
                 members = []
@@ -280,7 +273,6 @@ class DynamoDB:
                 )
                 channels.append(channel)
                 
-        print(f"\n[DB] Found {len(channels)} channels for user {user_id}: {[c.name for c in channels]}")
         return channels
 
     def create_message(self, channel_id: str, user_id: str, content: str, thread_id: str = None, attachments: List[str] = None) -> Message:
@@ -350,7 +342,6 @@ class DynamoDB:
         return Message(**item)
 
     def get_messages(self, channel_id: str, before: str = None, limit: int = 50) -> List[Message]:
-        print(f"\n[DB] Getting messages for channel {channel_id}")
         query_params = {
             'KeyConditionExpression': Key('PK').eq(f'CHANNEL#{channel_id}') & 
                                     Key('SK').begins_with('MSG#'),
@@ -365,8 +356,6 @@ class DynamoDB:
             }
             
         response = self.table.query(**query_params)
-        print(f"[DB] Raw DynamoDB response: {len(response['Items'])} messages")
-        print("[DB] First few SK values:", [item['SK'] for item in response['Items'][:3]])
         
         messages = []
         for item in response['Items']:
@@ -524,7 +513,6 @@ class DynamoDB:
         )
         
         count = response.get('Count', 0)
-        print(f"[DB] Message count for channel {channel_id}: {count}")
         return count
 
     def get_other_dm_user(self, channel_id: str, current_user_id: str) -> Optional[str]:
@@ -537,10 +525,8 @@ class DynamoDB:
         for item in response['Items']:
             member_id = item['SK'].split('#')[1]
             if member_id != current_user_id:
-                print(f"[DB] Found other user {member_id} in channel {channel_id}")
                 return member_id
                 
-        print(f"[DB] No other user found in channel {channel_id}")
         return None 
 
     def get_channel_members(self, channel_id: str) -> List[dict]:

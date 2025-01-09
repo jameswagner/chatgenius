@@ -17,6 +17,7 @@ class Message:
     attachments: List[str] = field(default_factory=list)
     reply_count: Optional[int] = None
     user: Optional[dict] = None
+    edit_history: List[Dict] = field(default_factory=list)
 
     def to_dict(self):
         return {
@@ -34,5 +35,6 @@ class Message:
             'editedAt': (self.edited_at.strftime('%Y-%m-%d %H:%M:%S')
                         if isinstance(self.edited_at, datetime)
                         else self.edited_at),
-            'isEdited': self.is_edited
+            'isEdited': self.is_edited,
+            'editHistory': self.edit_history
         } 

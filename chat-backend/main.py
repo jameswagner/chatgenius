@@ -15,20 +15,22 @@ import uuid
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
-socketio = SocketIO(app, cors_allowed_origins="http://localhost:5173")
+app.config['DYNAMODB_TABLE'] = os.environ.get('DYNAMODB_TABLE', 'chat_app_jrw')
+
+socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5173", "http://localhost:5174"])
 CORS(app, resources={
     r"/*": {
-        "origins": ["http://localhost:5173"],
+        "origins": ["http://localhost:5173", "http://localhost:5174"],
         "allow_headers": ["Content-Type", "Authorization"],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     }
 })
 app.static_folder = 'uploads'  # This tells Flask where to find static files
 
-db = DynamoDB()
+db = DynamoDB(table_name=app.config['DYNAMODB_TABLE'])
 
 # Create table if it doesn't exist
-create_chat_table()
+create_chat_table(table_name=app.config['DYNAMODB_TABLE'])
 
 auth_service = AuthService(db, app.config['SECRET_KEY'])
 

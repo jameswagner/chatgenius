@@ -173,6 +173,17 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels, messages }:
     return (channel.unreadCount || 0) > 0;
   };
 
+  const renderChannelName = (channel: Channel) => {
+    return (
+      <div className="flex items-center gap-2">
+        <span>#{channel.name}</span>
+        {channel.type === 'private' && (
+          <span className="text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded">private</span>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="w-64 bg-gray-800 text-white flex flex-col h-full">
       <div className="p-4 border-b border-gray-700">
@@ -257,7 +268,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels, messages }:
                   onClick={() => onChannelSelect(channel.id, channel.name, false)}
                 >
                   <div className="flex items-center gap-2">
-                    <span>#{channel.name}</span>
+                    {renderChannelName(channel)}
                     {channel.id !== currentChannel && hasUnreadMessages(channel) && (
                       <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>
                     )}

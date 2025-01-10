@@ -1,10 +1,11 @@
 import boto3
 from botocore.exceptions import ClientError
+import datetime
 
 def create_chat_table(table_name="chat_app_jrw"):
+    """Create DynamoDB table with required indexes if it doesn't exist"""
     dynamodb = boto3.resource('dynamodb')
     
-    # Check if table already exists
     try:
         table = dynamodb.Table(table_name)
         table.load()
@@ -12,8 +13,7 @@ def create_chat_table(table_name="chat_app_jrw"):
         return table
     except ClientError as e:
         if e.response['Error']['Code'] == 'ResourceNotFoundException':
-            # Table doesn't exist, create it
-            print(f"Creating table {table_name}")
+            # Create table with required indexes
             table = dynamodb.create_table(
                 TableName=table_name,
                 KeySchema=[
@@ -58,7 +58,10 @@ def create_chat_table(table_name="chat_app_jrw"):
                 ],
                 BillingMode='PAY_PER_REQUEST'
             )
+            
+            print(f"Creating table {table_name}...")
             table.wait_until_exists()
+            print(f"Table {table_name} created successfully")
             return table
         else:
             raise 

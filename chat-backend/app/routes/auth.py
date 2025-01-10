@@ -18,8 +18,10 @@ def register():
         )
         return jsonify(result), 201
     except ValueError as e:
+        print(f"Error registering user: {e}")
         return jsonify({'error': str(e)}), 400
     except Exception as e:
+        print(f"Error registering user: {e}")
         return jsonify({'error': 'Registration failed'}), 500
 
 @auth_bp.route('/login', methods=['POST'])

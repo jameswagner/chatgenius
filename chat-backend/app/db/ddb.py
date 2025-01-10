@@ -13,6 +13,36 @@ class DynamoDB:
         self.dynamodb = boto3.resource('dynamodb')
         self.table = self.dynamodb.Table(table_name)
         
+        # Ensure general channel exists
+        try:
+            response = self.table.get_item(
+                Key={
+                    'PK': 'CHANNEL#general',
+                    'SK': '#METADATA'
+                }
+            )
+            
+            if 'Item' not in response:
+                # Create general channel
+                timestamp = self._now()
+                self.table.put_item(
+                    Item={
+                        'PK': 'CHANNEL#general',
+                        'SK': '#METADATA',
+                        'GSI1PK': 'TYPE#public',
+                        'GSI1SK': 'NAME#general',
+                        'id': 'general',
+                        'name': 'general',
+                        'type': 'public',
+                        'created_by': 'system',
+                        'created_at': timestamp,
+                        'members': []
+                    }
+                )
+                print("Created general channel")
+        except Exception as e:
+            print(f"Error checking/creating general channel: {e}")
+        
     def _generate_id(self) -> str:
         return str(uuid.uuid4())
         

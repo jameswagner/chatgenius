@@ -24,14 +24,23 @@ class AuthService:
         }
         return jwt.encode(payload, self.secret_key, algorithm='HS256')
 
-    def register(self, email, password, name):
+    def register(self, email: str, password: str, name: str) -> dict:
+        # Check if user already exists
         if self.db.get_user_by_email(email):
-            raise ValueError('Email already registered')
+            raise ValueError(f"Email {email} already registered")
             
-        hashed_password = generate_password_hash(password)
-        user = self.db.create_user(email, name, hashed_password)
+        # Create user
+        user = self.db.create_user(email=email, password=generate_password_hash(password), name=name)
         
+        # Add user to general channel
+        try:
+            self.db.add_channel_member('general', user.id)
+        except Exception as e:
+            print(f"Error adding user to general channel: {e}")
+        
+        # Generate tokens
         token = self.create_token(user.id)
+        
         return {
             'token': token,
             'user_id': user.id

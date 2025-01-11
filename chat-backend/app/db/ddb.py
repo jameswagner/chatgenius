@@ -280,6 +280,12 @@ class DynamoDB:
             if 'Item' in response:
                 channel_data = self._clean_item(response['Item'])
                 print(f"Found channel: {channel_data['name']}")
+                
+                # Add members for DM channels
+                if channel_data.get('type') == 'dm':
+                    channel_data['members'] = self.get_channel_members(channel_id)
+                    print(f"Added members for DM channel: {channel_data['members']}")
+                
                 channels.append(Channel(**channel_data))
             else:
                 print(f"Warning: Channel {channel_id} metadata not found")
@@ -288,9 +294,17 @@ class DynamoDB:
 
     def create_message(self, channel_id: str, user_id: str, content: str, thread_id: str = None, attachments: List[str] = None) -> Message:
         """Create a new message"""
+        print(f"\n=== Creating message ===")
+        print(f"Channel: {channel_id}")
+        print(f"User: {user_id}")
+        print(f"Content: {content}")
+        print(f"Thread: {thread_id}")
+        print(f"Attachments: {attachments}")
+        
         message_id = self._generate_id()
         timestamp = self._now()
         
+        # Create main message item
         item = {
             'PK': f'CHANNEL#{channel_id}',
             'SK': f'MSG#{timestamp}#{message_id}',
@@ -310,12 +324,35 @@ class DynamoDB:
         if attachments:
             item['attachments'] = attachments
 
+        print(f"\nPutting message item: {item}")
         self.table.put_item(Item=item)
+        print("Message item created successfully")
+        
+        # Index words for search
+        if content:
+            print("\nIndexing words for search...")
+            # Split content into words and normalize
+            words = set(content.lower().split())
+            print(f"Words to index: {words}")
+            
+            # Create index items for each word
+            for word in words:
+                word_item = {
+                    'PK': f'WORD#{word}',
+                    'SK': f'MESSAGE#{message_id}',
+                    'GSI3PK': f'CONTENT#{word}',
+                    'GSI3SK': f'TS#{timestamp}',
+                    'message_id': message_id
+                }
+                print(f"Creating index item for word '{word}': {word_item}")
+                self.table.put_item(Item=word_item)
+            print("Word indexing complete")
         
         message = Message(**self._clean_item(item))
         user = self.get_user_by_id(user_id)
         if user:
             message.user = user
+            print(f"Added user data to message: {user.name}")
             
         return message
 
@@ -399,19 +436,24 @@ class DynamoDB:
         return Reaction(**self._clean_item(item))
 
     def search_messages(self, user_id: str, query: str) -> List[Message]:
+        print(f"\n=== Searching messages for query: '{query}' ===")
         # Get user's channels
         channels = self.get_channels_for_user(user_id)
         channel_ids = [channel.id for channel in channels]
+        print(f"User's channels: {channel_ids}")
         
         # Search for messages containing the query word
         word = query.lower()
+        print(f"Searching GSI3 for word: '{word}'")
         response = self.table.query(
             IndexName='GSI3',
             KeyConditionExpression=Key('GSI3PK').eq(f'CONTENT#{word}'),
             ScanIndexForward=False  # Latest first
         )
+        print(f"GSI3 query response: {response}")
         
         message_ids = [item['message_id'] for item in response['Items']]
+        print(f"Found message IDs: {message_ids}")
         messages = []
         
         # Get full message details and filter by user's channels
@@ -422,8 +464,10 @@ class DynamoDB:
                 if user:
                     message.user = user
                 messages.append(message)
+                print(f"Added message {message_id} to results")
                 
-        return messages[:50]  # Limit results 
+        print(f"Returning {len(messages)} messages")
+        return messages[:50]  # Limit results
 
     def get_thread_messages(self, thread_id: str) -> List[Message]:
         # Scan for messages in thread (could be optimized with a GSI)

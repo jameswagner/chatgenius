@@ -370,18 +370,13 @@ export const ChatLayout = () => {
         return;
       }
 
-      // Determine if the current user is a member of this channel
-      const currentUserId = localStorage.getItem('userId');
-      const isMember = channel.members?.some(member => member.id === currentUserId);
-
-      // Determine which group to use
+      // Since backend only returns messages from channels the user is a member of,
+      // we can simply check if it's a DM or not
       let targetGroup;
       if (channel.type === 'dm') {
         targetGroup = grouped.dms;
-      } else if (isMember) {
-        targetGroup = grouped.memberChannels;
       } else {
-        targetGroup = grouped.otherChannels;
+        targetGroup = grouped.memberChannels;
       }
 
       if (!targetGroup[channel.id]) {

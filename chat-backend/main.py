@@ -448,5 +448,15 @@ def mark_channel_read(channel_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/personas', methods=['GET'])
+def get_personas():
+    """Get all available personas"""
+    try:
+        personas = db.get_persona_users()
+        return jsonify([p.to_dict() for p in personas]), 200
+    except Exception as e:
+        print(f"Error getting personas: {e}")
+        return jsonify({'error': 'Failed to get personas'}), 500
+
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True) 

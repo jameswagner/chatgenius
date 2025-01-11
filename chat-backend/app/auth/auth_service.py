@@ -25,21 +25,29 @@ class AuthService:
         return jwt.encode(payload, self.secret_key, algorithm='HS256')
 
     def register(self, email: str, password: str, name: str) -> dict:
+        print(f"\n=== Starting registration for {email} ===")
         # Check if user already exists
         if self.db.get_user_by_email(email):
+            print(f"Email {email} already registered")
             raise ValueError(f"Email {email} already registered")
             
         # Create user
         user = self.db.create_user(email=email, password=generate_password_hash(password), name=name)
+        print(f"Created user with ID: {user.id}")
         
         # Add user to general channel
         try:
+            print("Attempting to add user to general channel...")
             self.db.add_channel_member('general', user.id)
+            print("Successfully added user to general channel")
         except Exception as e:
-            print(f"Error adding user to general channel: {e}")
+            print(f"Error adding user to general channel: {str(e)}")
+            print(f"Error type: {type(e)}")
+            raise  # Let's raise the error to see what's happening
         
         # Generate tokens
         token = self.create_token(user.id)
+        print("=== Registration completed successfully ===\n")
         
         return {
             'token': token,

@@ -67,7 +67,8 @@ class DynamoDB:
     GSI3: Global Secondary Index for message search (CONTENT#<word> | TS#<timestamp>)
     """
 
-    def create_user(self, email: str, name: str, password: str) -> User:
+    def create_user(self, email: str, name: str, password: str, type: str = 'user') -> User:
+        print(f"\n=== Creating user: {email} ===")
         user_id = self._generate_id()
         timestamp = self._now()
         
@@ -83,18 +84,24 @@ class DynamoDB:
             'status': 'offline',
             'last_active': timestamp,
             'created_at': timestamp,
-            'type': 'user'
+            'type': type
         }
         
+        print(f"Creating user item with ID: {user_id}")
         self.table.put_item(Item=item)
+        print("User item created successfully")
         
-        # Add user to general channel
-        self.add_channel_member('general', user_id)
+        # Add user to general channel if not a persona
+        if type == 'user':
+            print(f"Adding user {user_id} to general channel")
+            self.add_channel_member('general', user_id)
+            print("User added to general channel")
         
         return User(
             id=user_id,
             email=email,
             name=name,
+            type=type,
             password=password,
             status='offline',
             last_active=timestamp,
@@ -103,7 +110,7 @@ class DynamoDB:
 
     def get_user_by_email(self, email: str) -> Optional[User]:
         response = self.table.scan(
-            FilterExpression=Attr('email').eq(email) & Attr('type').eq('user')
+            FilterExpression=Attr('email').eq(email)
         )
         
         if not response['Items']:
@@ -207,16 +214,30 @@ class DynamoDB:
         return Channel(**self._clean_item(item))
 
     def add_channel_member(self, channel_id: str, user_id: str) -> None:
+        print(f"\n=== Adding user {user_id} to channel {channel_id} ===")
         timestamp = self._now()
         
-        self.table.put_item(Item={
+        # First check if channel exists
+        channel = self.get_channel_by_id(channel_id)
+        print(f"Channel exists check: {channel is not None}")
+        
+        item = {
             'PK': f'CHANNEL#{channel_id}',
             'SK': f'MEMBER#{user_id}',
             'GSI2PK': f'USER#{user_id}',
             'GSI2SK': f'CHANNEL#{channel_id}',
             'joined_at': timestamp,
-            'last_read': timestamp  # Initialize last_read
-        })
+            'last_read': timestamp
+        }
+        
+        try:
+            print(f"Attempting to add member item: {item}")
+            self.table.put_item(Item=item)
+            print("Successfully added channel member")
+        except Exception as e:
+            print(f"Error adding channel member: {str(e)}")
+            print(f"Error type: {type(e)}")
+            raise
 
     def mark_channel_read(self, channel_id: str, user_id: str) -> None:
         """Mark all current messages in a channel as read for a user"""
@@ -235,6 +256,7 @@ class DynamoDB:
         )
 
     def get_channels_for_user(self, user_id: str) -> List[Channel]:
+        print(f"\n=== Getting channels for user {user_id} ===")
         # Query GSI2 to get all channels for user
         response = self.table.query(
             IndexName='GSI2',
@@ -242,6 +264,7 @@ class DynamoDB:
         )
         
         channel_ids = [item['GSI2SK'].split('#')[1] for item in response['Items']]
+        print(f"Found channel IDs: {channel_ids}")
         
         channels = []
         
@@ -256,53 +279,11 @@ class DynamoDB:
             )
             if 'Item' in response:
                 channel_data = self._clean_item(response['Item'])
-                
-                # Get member data including last_read
-                member_response = self.table.get_item(
-                    Key={
-                        'PK': f'CHANNEL#{channel_id}',
-                        'SK': f'MEMBER#{user_id}'
-                    }
-                )
-                
-                last_read = None
-                if 'Item' in member_response:
-                    last_read = member_response['Item'].get('last_read')
-                
-                # Calculate unread count
-                unread_count = 0
-                if last_read:
-                    # Query messages after last_read
-                    messages_response = self.table.query(
-                        KeyConditionExpression='PK = :pk AND SK > :last_read',
-                        ExpressionAttributeValues={
-                            ':pk': f'CHANNEL#{channel_id}',
-                            ':last_read': f'MSG#{last_read}'
-                        }
-                    )
-                    
-                    # Only count messages from other users
-                    unread_count = sum(1 for item in messages_response.get('Items', [])
-                                     if item.get('userId') != user_id)
-
-                
-                # Get members if DM channel
-                members = []
-                if channel_data['type'] == 'dm':
-                    members = self.get_channel_members(channel_id)
-                
-                channel = Channel(
-                    id=channel_id,
-                    name=channel_data['name'],
-                    type=channel_data['type'],
-                    created_by=channel_data['created_by'],
-                    created_at=channel_data['created_at'],
-                    members=members,
-                    last_read=last_read,
-                    unread_count=unread_count
-                )
-                channels.append(channel)
-                
+                print(f"Found channel: {channel_data['name']}")
+                channels.append(Channel(**channel_data))
+            else:
+                print(f"Warning: Channel {channel_id} metadata not found")
+        
         return channels
 
     def create_message(self, channel_id: str, user_id: str, content: str, thread_id: str = None, attachments: List[str] = None) -> Message:
@@ -488,6 +469,7 @@ class DynamoDB:
         } for item in response['Items']]
 
     def get_available_channels(self, user_id: str) -> List[Channel]:
+        print(f"\n=== Getting available channels for user {user_id} ===")
         # Get public channels
         response = self.table.query(
             IndexName='GSI1',
@@ -497,12 +479,16 @@ class DynamoDB:
         # Filter out channels user is already member of
         user_channels = self.get_channels_for_user(user_id)
         user_channel_ids = {c.id for c in user_channels}
+        print(f"User is already member of channels: {user_channel_ids}")
         
         channels = []
         for item in response['Items']:
             cleaned = self._clean_item(item)
             if cleaned['id'] not in user_channel_ids:
+                print(f"Adding available channel: {cleaned['name']}")
                 channels.append(Channel(**cleaned))
+            else:
+                print(f"Skipping channel {cleaned['name']} as user is already a member")
         return channels
 
     def get_dm_channel(self, user1_id: str, user2_id: str) -> Optional[Channel]:
@@ -617,3 +603,11 @@ class DynamoDB:
                 updated_message.user = user
                 
         return updated_message 
+
+    def get_persona_users(self) -> List[User]:
+        """Get all persona users"""
+        response = self.table.scan(
+            FilterExpression=Attr('type').eq('persona')
+        )
+        
+        return [User(**self._clean_item(item)) for item in response['Items']] 

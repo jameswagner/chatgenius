@@ -7,6 +7,7 @@ class User:
     id: str
     email: str
     name: str
+    type: str = 'user'  # 'user' or 'persona'
     status: str = 'offline'
     last_active: Optional[datetime] = None
     created_at: datetime = None
@@ -30,6 +31,7 @@ class User:
             'id': self.id,
             'name': self.name,
             'email': self.email,
+            'type': self.type,
             'status': self.status,
             'lastActive': self.last_active.isoformat() if self.last_active else None,
             'createdAt': self.created_at.isoformat() if self.created_at else None

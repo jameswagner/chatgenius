@@ -65,6 +65,33 @@ export const api = {
     logout: async (): Promise<void> => {
       await client.post('/auth/logout');
     },
+    loginAsPersona: async (email: string) => {
+      const response = await fetch(`${API_BASE_URL}/auth/login/persona`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to login as persona');
+      }
+      
+      return response.json();
+    },
+  },
+
+  personas: {
+    list: async () => {
+      const response = await fetch(`${API_BASE_URL}/personas`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch personas');
+      }
+      
+      return response.json();
+    },
   },
 
   // Channel operations

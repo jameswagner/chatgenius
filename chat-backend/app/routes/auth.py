@@ -24,6 +24,27 @@ def register():
         print(f"Error registering user: {e}")
         return jsonify({'error': 'Registration failed'}), 500
 
+@auth_bp.route('/personas/login', methods=['POST'])
+def login_as_persona():
+    """Login as a persona user"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        if 'email' not in data:
+            return jsonify({'error': 'Missing email'}), 400
+            
+        # Try to login as persona
+        result = auth_service.login_as_persona(data['email'])
+        return jsonify(result), 200
+        
+    except ValueError as e:
+        print(f"Persona login failed: {str(e)}")
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        return jsonify({'error': 'Login failed'}), 500
+
 @auth_bp.route('/login', methods=['POST'])
 def login():
     try:

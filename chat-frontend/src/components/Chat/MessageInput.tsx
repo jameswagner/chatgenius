@@ -78,6 +78,7 @@ export const MessageInput = ({ channelId, onSendMessage, threadId, placeholder, 
           onChange={(e) => setMessage(e.target.value)}
           placeholder={placeholder || `Message ${isDM ? '' : '#'}${currentChannelName}`}
           className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:border-blue-500"
+          data-testid="message-input"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !isDisabled) {
               e.preventDefault();
@@ -98,6 +99,7 @@ export const MessageInput = ({ channelId, onSendMessage, threadId, placeholder, 
           onClick={() => fileInputRef.current?.click()}
           className="p-2 text-gray-500 hover:text-gray-700"
           disabled={isSending}
+          data-testid="attachment-button"
         >
           <PaperClipIcon className="h-5 w-5" />
         </button>
@@ -105,6 +107,7 @@ export const MessageInput = ({ channelId, onSendMessage, threadId, placeholder, 
           onClick={handleSubmit}
           disabled={isDisabled}
           className={`p-2 ${isDisabled ? 'text-gray-300 cursor-not-allowed' : 'text-blue-500 hover:text-blue-600'}`}
+          data-testid="send-message-button"
         >
           <PaperAirplaneIcon className="h-5 w-5" />
         </button>

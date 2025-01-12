@@ -67,7 +67,7 @@ class AuthService:
         return {
             'token': token,
             'user_id': user.id
-        } 
+        }
 
 def auth_required(f):
     @wraps(f)

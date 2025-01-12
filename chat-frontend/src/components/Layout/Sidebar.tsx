@@ -248,6 +248,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels, messages }:
               Your Channels
             </h2>
             <button
+              data-testid="create-channel-button"
               onClick={(e) => {
                 e.stopPropagation();
                 setShowCreateChannel(true);
@@ -262,6 +263,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels, messages }:
               {joinedChannels.map(channel => (
                 <li 
                   key={channel.id}
+                  data-testid={`channel-${channel.name}`}
                   className={`p-2 rounded cursor-pointer flex items-center justify-between ${
                     channel.id === currentChannel ? 'bg-gray-700' : 'hover:bg-gray-700'
                   }`}
@@ -287,10 +289,12 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels, messages }:
               {availableChannels.map(channel => (
                 <li 
                   key={channel.id}
+                  data-testid={`channel-${channel.name}`}
                   className="p-2 rounded hover:bg-gray-700 cursor-pointer flex justify-between items-center"
                 >
                   #{channel.name}
                   <button
+                    data-testid="join-channel-button"
                     onClick={() => handleJoinChannel(channel.id)}
                     className="text-sm text-blue-400 hover:text-blue-300"
                   >

@@ -68,56 +68,60 @@ class DynamoDB:
     """
 
     def create_user(self, email: str, name: str, password: str, type: str = 'user') -> User:
-        print(f"\n=== Creating user: {email} ===")
+        print(f"\n=== Creating user: email={email}, name={name}, type={type} ===")
         user_id = self._generate_id()
         timestamp = self._now()
         
-        item = {
-            'PK': f'USER#{user_id}',
-            'SK': '#METADATA',
-            'GSI1PK': 'STATUS#offline',
-            'GSI1SK': f'TS#{timestamp}',
-            'id': user_id,
-            'email': email,
-            'name': name,
-            'password': password,
-            'status': 'offline',
-            'last_active': timestamp,
-            'created_at': timestamp,
-            'type': type
-        }
-        
-        print(f"Creating user item with ID: {user_id}")
-        self.table.put_item(Item=item)
-        print("User item created successfully")
-        
-        # Add user to general channel if not a persona
-        if type == 'user':
-            print(f"Adding user {user_id} to general channel")
-            self.add_channel_member('general', user_id)
-            print("User added to general channel")
-        
-        return User(
-            id=user_id,
-            email=email,
-            name=name,
-            type=type,
-            password=password,
-            status='offline',
-            last_active=timestamp,
-            created_at=timestamp
-        )
+        try:
+            item = {
+                'PK': f'USER#{user_id}',
+                'SK': '#METADATA',
+                'GSI1PK': 'TYPE#user',
+                'GSI1SK': f'EMAIL#{email}',
+                'id': user_id,
+                'email': email,
+                'name': name,
+                'password': password,
+                'type': type,
+                'created_at': timestamp,
+                'status': 'online'
+            }
+            print(f"Attempting to create user with item: {item}")
+            
+            self.table.put_item(Item=item)
+            print(f"User item created successfully with ID: {user_id}")
+            
+            return User(id=user_id, email=email, name=name, type=type, created_at=timestamp, status='online')
+        except Exception as e:
+            print(f"Error creating user: {str(e)}")
+            print(f"Error type: {type(e)}")
+            raise
 
     def get_user_by_email(self, email: str) -> Optional[User]:
-        response = self.table.scan(
-            FilterExpression=Attr('email').eq(email)
-        )
-        
-        if not response['Items']:
-            return None
+        print(f"\n=== Getting user by email: {email} ===")
+        try:
+            response = self.table.query(
+                IndexName='GSI1',
+                KeyConditionExpression=Key('GSI1PK').eq('TYPE#user') & Key('GSI1SK').eq(f'EMAIL#{email}')
+            )
             
-        item = response['Items'][0]
-        return User(**self._clean_item(item))
+            if response['Items']:
+                item = response['Items'][0]
+                print(f"Found user: {item['name']} (id: {item['id']})")
+                return User(
+                    id=item['id'],
+                    email=item['email'],
+                    name=item['name'],
+                    type=item['type'],
+                    created_at=item['created_at'],
+                    status=item.get('status', 'offline'),
+                    password=item.get('password')
+                )
+            print("No user found with this email")
+            return None
+        except Exception as e:
+            print(f"Error getting user by email: {str(e)}")
+            raise
 
     def update_user_status(self, user_id: str, status: str) -> Optional[User]:
         timestamp = self._now()
@@ -143,18 +147,26 @@ class DynamoDB:
         return self.get_user_by_id(user_id) 
 
     def get_user_by_id(self, user_id: str) -> Optional[User]:
-        response = self.table.get_item(
-            Key={
-                'PK': f'USER#{user_id}',
-                'SK': '#METADATA'
-            }
-        )
-        
-        if 'Item' not in response:
-            return None
+
+        try:
+            response = self.table.get_item(
+                Key={
+                    'PK': f'USER#{user_id}',
+                    'SK': '#METADATA'
+                }
+            )
             
-        item = response['Item']
-        return User(**self._clean_item(item))
+            if 'Item' not in response:
+                print(f"No user found with ID: {user_id}")
+                return None
+                
+            item = response['Item']
+
+            return User(**self._clean_item(item))
+        except Exception as e:
+            print(f"Error getting user by ID: {str(e)}")
+            print(f"Error type: {type(e)}")
+            raise
 
     def _clean_item(self, item: dict) -> dict:
         """Clean DynamoDB item for model creation"""
@@ -552,17 +564,26 @@ class DynamoDB:
 
     def get_channel_by_id(self, channel_id: str) -> Optional[Channel]:
         """Get a channel by its ID"""
-        response = self.table.get_item(
-            Key={
-                'PK': f'CHANNEL#{channel_id}',
-                'SK': '#METADATA'
-            }
-        )
-        
-        if 'Item' not in response:
-            return None
+        print(f"\n=== Getting channel by ID: {channel_id} ===")
+        try:
+            response = self.table.get_item(
+                Key={
+                    'PK': f'CHANNEL#{channel_id}',
+                    'SK': '#METADATA'
+                }
+            )
             
-        return Channel(**self._clean_item(response['Item'])) 
+            if 'Item' not in response:
+                print(f"No channel found with ID: {channel_id}")
+                return None
+                
+            item = response['Item']
+            print(f"Found channel: {item.get('name')} (type: {item.get('type')})")
+            return Channel(**self._clean_item(item))
+        except Exception as e:
+            print(f"Error getting channel by ID: {str(e)}")
+            print(f"Error type: {type(e)}")
+            raise
 
     def get_channel_message_count(self, channel_id: str) -> int:
         """Get the number of messages in a channel"""
@@ -655,3 +676,30 @@ class DynamoDB:
         )
         
         return [User(**self._clean_item(item)) for item in response['Items']] 
+
+    def get_channel_messages(self, channel_id: str) -> List[Message]:
+        print(f"\n=== Getting messages for channel: {channel_id} ===")
+        try:
+            response = self.table.query(
+                KeyConditionExpression=Key('PK').eq(f'CHANNEL#{channel_id}') & Key('SK').begins_with('MESSAGE#')
+            )
+            
+            messages = []
+            for item in response['Items']:
+                message = Message(
+                    id=item['id'],
+                    channel_id=channel_id,
+                    user_id=item['user_id'],
+                    content=item['content'],
+                    created_at=item['created_at'],
+                    thread_id=item.get('thread_id'),
+                    reactions=self._get_message_reactions(item['id']),
+                    attachments=item.get('attachments', [])
+                )
+                messages.append(message)
+            
+            print(f"Found {len(messages)} messages")
+            return messages
+        except Exception as e:
+            print(f"Error getting channel messages: {str(e)}")
+            raise 

@@ -2,7 +2,6 @@ import boto3
 from botocore.exceptions import ClientError
 import os
 from werkzeug.utils import secure_filename
-from ..config import S3_BUCKET
 
 class FileStorage:
     def __init__(self):

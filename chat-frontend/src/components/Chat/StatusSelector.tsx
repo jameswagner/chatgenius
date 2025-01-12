@@ -65,6 +65,7 @@ export const StatusSelector = () => {
   return (
     <div className="relative">
       <button
+        data-testid="status-selector-button"
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 px-3 py-1 rounded hover:bg-gray-100"
       >
@@ -83,6 +84,7 @@ export const StatusSelector = () => {
           {STATUS_OPTIONS.map(option => (
             <button
               key={option.value}
+              data-testid={`status-option-${option.value}`}
               onClick={() => handleStatusChange(option.value)}
               className={`w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100
                 ${currentStatus === option.value ? 'bg-gray-50' : ''}`}

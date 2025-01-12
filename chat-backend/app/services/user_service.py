@@ -108,8 +108,9 @@ class UserService(BaseService):
 
     def get_all_users(self) -> List[Dict]:
         """Get all users except password field."""
-        response = self.table.scan(
-            FilterExpression=Attr('type').eq('user')
+        response = self.table.query(
+            IndexName='GSI1',
+            KeyConditionExpression=Key('GSI1PK').eq('TYPE#user')
         )
         
         # Clean items and only return necessary fields
@@ -120,8 +121,9 @@ class UserService(BaseService):
 
     def get_persona_users(self) -> List[User]:
         """Get all persona users."""
-        response = self.table.scan(
-            FilterExpression=Attr('type').eq('persona')
+        response = self.table.query(
+            IndexName='GSI1',
+            KeyConditionExpression=Key('GSI1PK').eq('TYPE#persona')
         )
         
         return [User(**self._clean_item(item)) for item in response['Items']]

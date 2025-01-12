@@ -131,6 +131,7 @@ class DynamoDB:
         return self.channel_service.add_channel_member(channel_id, user_id)
 
     def mark_channel_read(self, channel_id: str, user_id: str) -> None:
+        """Mark a channel as read for a user."""
         return self.channel_service.mark_channel_read(channel_id, user_id)
 
     def get_channels_for_user(self, user_id: str) -> List[Channel]:
@@ -184,3 +185,7 @@ class DynamoDB:
 
     def search_messages(self, user_id: str, query: str) -> List[Message]:
         return self.search_service.search_messages(user_id, query)
+
+    def is_channel_member(self, channel_id: str, user_id: str) -> bool:
+        """Check if a user is a member of a channel."""
+        return self.channel_service.is_channel_member(channel_id, user_id)

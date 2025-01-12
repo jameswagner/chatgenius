@@ -13,17 +13,19 @@ class SearchService(BaseService):
 
     def get_message(self, message_id: str) -> Message:
         """Get a message by its ID"""
-        response = self.table.scan(
-            FilterExpression=Key('id').eq(message_id) & 
-                           Key('SK').begins_with('MSG#')
+        response = self.table.get_item(
+            Key={
+                'PK': f'MSG#{message_id}',
+                'SK': f'MSG#{message_id}'
+            }
         )
         
-        if not response['Items']:
+        if 'Item' not in response:
             return None
             
-        item = self._clean_item(response['Items'][0])
+        item = self._clean_item(response['Item'])
         # Get reactions from the item itself since they're denormalized
-        item['reactions'] = response['Items'][0].get('reactions', {})
+        item['reactions'] = response['Item'].get('reactions', {})
         return Message(**item)
 
     def search_messages(self, user_id: str, query: str) -> List[Message]:

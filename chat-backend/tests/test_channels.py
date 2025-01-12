@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from app.services.channel_service import ChannelService
 from app.services.user_service import UserService
 from scripts.create_table import create_chat_table
+from app.services.message_service import MessageService
 
 @pytest.fixture
 def aws_credentials():
@@ -264,25 +265,30 @@ def test_get_channel_message_count(ddb, user_service):
     """Test getting message count for a channel."""
     # Create test user
     create_test_user(user_service, "user1", "User One")
-    
+
     # Create a channel
     channel = ddb.create_channel(
         name="count-channel",
         type="public",
         created_by="user1"
     )
-    
-    # Add some messages directly to DynamoDB
+
+    # Add some messages using the new format
     timestamp = datetime.now(timezone.utc).isoformat()
     for i in range(5):
+        message_id = f"msg{i}"
         ddb.table.put_item(Item={
-            'PK': f'CHANNEL#{channel.id}',
-            'SK': f'MSG#{timestamp}#{i}',
+            'PK': f'MSG#{message_id}',
+            'SK': f'MSG#{message_id}',
+            'GSI1PK': f'CHANNEL#{channel.id}',
+            'GSI1SK': f'TS#{timestamp}',
             'content': f'Message {i}',
-            'sender': 'user1',
-            'timestamp': timestamp
+            'user_id': 'user1',
+            'channel_id': channel.id,
+            'created_at': timestamp,
+            'id': message_id
         })
-    
+
     count = ddb.get_channel_message_count(channel.id)
     assert count == 5
 
@@ -326,39 +332,103 @@ def test_get_other_dm_user_not_dm(ddb, user_service):
         ddb.get_other_dm_user(channel.id, "user1")
 
 def test_mark_channel_read(ddb, user_service):
-    """Test marking a channel as read."""
-    # Create test users
-    create_test_user(user_service, "user1", "User One")
-    create_test_user(user_service, "user2", "User Two")
+    """Test marking a channel as read"""
+    # Create a test user
+    user = ddb.create_user("test@example.com", "Test User", "password")
     
-    # Create a channel with some messages
-    channel = ddb.create_channel(
-        name="read-channel",
-        type="public",
-        created_by="user1"
-    )
+    # Add user to channel
+    ddb.add_channel_member(channel.id, user.id)
     
-    # Add another member
-    ddb.add_channel_member(channel.id, "user2")
+    # Create some test messages
+    message1 = ddb.create_message(channel.id, user.id, "Message 1")
+    message2 = ddb.create_message(channel.id, user.id, "Message 2")
+    message3 = ddb.create_message(channel.id, user.id, "Message 3")
     
-    # Mark as read for user2
-    ddb.mark_channel_read(channel.id, "user2")
+    # Get channels for user - should show unread messages
+    channels = ddb.get_channels_for_user(user.id)
+    assert len(channels) == 1
+    assert channels[0].unread_count == 3
     
-    # Verify last_read was updated
-    members = ddb.get_channel_members(channel.id)
-    user2_member = next(m for m in members if m['id'] == "user2")
-    assert user2_member['name'] == "User Two"
+    # Mark channel as read
+    ddb.mark_channel_read(channel.id, user.id)
+    
+    # Check unread count is now 0
+    channels = ddb.get_channels_for_user(user.id)
+    assert len(channels) == 1
+    assert channels[0].unread_count == 0
+    
+    # Add new message
+    message4 = ddb.create_message(channel.id, user.id, "Message 4")
+    
+    # Check unread count is now 1
+    channels = ddb.get_channels_for_user(user.id)
+    assert len(channels) == 1
+    assert channels[0].unread_count == 1
 
-def test_mark_channel_read_nonmember(ddb, user_service):
-    """Test marking a channel as read for a non-member."""
-    # Create test user
-    create_test_user(user_service, "user1", "User One")
+def test_unread_counts_multiple_channels(ddb):
+    """Test unread counts across multiple channels"""
+    # Create test users
+    user1 = ddb.create_user("user1@example.com", "User 1", "password")
+    user2 = ddb.create_user("user2@example.com", "User 2", "password")
     
-    channel = ddb.create_channel(
-        name="test-channel",
-        type="public",
-        created_by="user1"
-    )
+    # Create two channels
+    channel1 = ddb.create_channel("Channel 1", created_by=user1.id)
+    channel2 = ddb.create_channel("Channel 2", created_by=user1.id)
     
-    with pytest.raises(ValueError, match="User is not a member"):
-        ddb.mark_channel_read(channel.id, "nonmember") 
+    # Add user2 to both channels
+    ddb.add_channel_member(channel1.id, user2.id)
+    ddb.add_channel_member(channel2.id, user2.id)
+    
+    # Create messages in both channels
+    ddb.create_message(channel1.id, user1.id, "Channel 1 Message 1")
+    ddb.create_message(channel1.id, user1.id, "Channel 1 Message 2")
+    ddb.create_message(channel2.id, user1.id, "Channel 2 Message 1")
+    
+    # Check initial unread counts for user2
+    channels = ddb.get_channels_for_user(user2.id)
+    channel1_data = next(c for c in channels if c.id == channel1.id)
+    channel2_data = next(c for c in channels if c.id == channel2.id)
+    assert channel1_data.unread_count == 2
+    assert channel2_data.unread_count == 1
+    
+    # Mark channel1 as read
+    ddb.mark_channel_read(channel1.id, user2.id)
+    
+    # Verify counts after marking channel1 as read
+    channels = ddb.get_channels_for_user(user2.id)
+    channel1_data = next(c for c in channels if c.id == channel1.id)
+    channel2_data = next(c for c in channels if c.id == channel2.id)
+    assert channel1_data.unread_count == 0
+    assert channel2_data.unread_count == 1
+    
+    # Add new message to channel1
+    ddb.create_message(channel1.id, user1.id, "Channel 1 Message 3")
+    
+    # Verify counts after new message
+    channels = ddb.get_channels_for_user(user2.id)
+    channel1_data = next(c for c in channels if c.id == channel1.id)
+    channel2_data = next(c for c in channels if c.id == channel2.id)
+    assert channel1_data.unread_count == 1
+    assert channel2_data.unread_count == 1
+
+def test_mark_channel_read_permissions(ddb, channel):
+    """Test permissions for marking channel as read"""
+    # Create test users
+    user1 = ddb.create_user("user1@example.com", "User 1", "password")
+    user2 = ddb.create_user("user2@example.com", "User 2", "password")
+    
+    # Add only user1 to channel
+    ddb.add_channel_member(channel.id, user1.id)
+    
+    # Create a test message
+    ddb.create_message(channel.id, user1.id, "Test Message")
+    
+    # User1 should be able to mark as read
+    ddb.mark_channel_read(channel.id, user1.id)
+    
+    # User2 should not be able to mark as read
+    try:
+        ddb.mark_channel_read(channel.id, user2.id)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert str(e) == "User is not a member" 

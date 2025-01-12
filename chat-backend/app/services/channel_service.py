@@ -6,6 +6,7 @@ from boto3.dynamodb.conditions import Key, Attr
 from .base_service import BaseService
 from .user_service import UserService
 from ..models.channel import Channel
+import time
 
 class ChannelService(BaseService):
     def __init__(self, table_name: str = None):
@@ -74,7 +75,6 @@ class ChannelService(BaseService):
 
     def get_channel_by_id(self, channel_id: str) -> Optional[Channel]:
         """Get a channel by its ID."""
-        print(f"\n=== Getting channel by ID: {channel_id} ===")
         try:
             response = self.table.get_item(
                 Key={
@@ -84,77 +84,115 @@ class ChannelService(BaseService):
             )
             
             if 'Item' not in response:
-                print(f"No channel found with ID: {channel_id}")
                 return None
                 
             item = response['Item']
-            print(f"Found channel: {item.get('name')} (type: {item.get('type')})")
             return Channel(**self._clean_item(item))
         except Exception as e:
-            print(f"Error getting channel by ID: {str(e)}")
-            print(f"Error type: {type(e)}")
+            logging.error(f"Error getting channel by ID: {str(e)}")
             raise
 
     def get_channels_for_user(self, user_id: str) -> List[Channel]:
         """Get all channels a user is a member of."""
-        print(f"\n=== Getting channels for user {user_id} ===")
         # Query GSI2 to get all channels for user
         response = self.table.query(
             IndexName='GSI2',
             KeyConditionExpression=Key('GSI2PK').eq(f'USER#{user_id}')
         )
         
-        channel_ids = [item['GSI2SK'].split('#')[1] for item in response['Items']]
-        print(f"Found channel IDs: {channel_ids}")
+        # Get channel IDs and last_read timestamps
+        channel_data = {
+            item['GSI2SK'].split('#')[1]: item.get('last_read')
+            for item in response['Items']
+        }
+        channel_ids = list(channel_data.keys())
         
-        channels = []
-        
-        # Get channel details
-        for channel_id in channel_ids:
-            # Get channel metadata
-            response = self.table.get_item(
-                Key={
-                    'PK': f'CHANNEL#{channel_id}',
-                    'SK': '#METADATA'
+        if not channel_ids:
+            return []
+            
+        # Batch get channel metadata
+        channels_data = []
+        for i in range(0, len(channel_ids), 100):
+            batch_ids = channel_ids[i:i+100]
+            response = self.table.meta.client.batch_get_item(
+                RequestItems={
+                    self.table.name: {
+                        'Keys': [
+                            {
+                                'PK': f'CHANNEL#{channel_id}',
+                                'SK': '#METADATA'
+                            }
+                            for channel_id in batch_ids
+                        ]
+                    }
                 }
             )
-            if 'Item' in response:
-                channel_data = self._clean_item(response['Item'])
-                print(f"Found channel: {channel_data['name']}")
-                
-                # Add members for DM channels
-                if channel_data.get('type') == 'dm':
-                    channel_data['members'] = self.get_channel_members(channel_id)
-                    print(f"Added members for DM channel: {channel_data['members']}")
-                
-                channels.append(Channel(**channel_data))
-            else:
-                print(f"Warning: Channel {channel_id} metadata not found")
+            if 'Responses' in response and self.table.name in response['Responses']:
+                channels_data.extend(response['Responses'][self.table.name])
         
+        # Get unread counts for each channel
+        unread_counts = {}
+        for channel_id in channel_ids:
+            last_read = channel_data[channel_id]
+            if last_read:
+                # Query messages after last_read
+                response = self.table.query(
+                    IndexName='GSI1',
+                    KeyConditionExpression=Key('GSI1PK').eq(f'CHANNEL#{channel_id}') & 
+                                         Key('GSI1SK').gt(f'TS#{last_read}'),
+                    Select='COUNT'
+                )
+                unread_counts[channel_id] = response['Count']
+            else:
+                # If no last_read, all messages are unread
+                response = self.table.query(
+                    IndexName='GSI1',
+                    KeyConditionExpression=Key('GSI1PK').eq(f'CHANNEL#{channel_id}'),
+                    Select='COUNT'
+                )
+                unread_counts[channel_id] = response['Count']
+        
+        # Process channels
+        channels = []
+        for item in channels_data:
+            channel_data = self._clean_item(item)
+            channel_id = channel_data['id']
+            
+            # Add unread count
+            channel_data['unread_count'] = unread_counts.get(channel_id, 0)
+            
+            # Add members for DM channels
+            if channel_data.get('type') == 'dm':
+                channel_data['members'] = self.get_channel_members(channel_data['id'])
+                
+            channels.append(Channel(**channel_data))
+            
         return channels
 
     def get_available_channels(self, user_id: str) -> List[Channel]:
         """Get public channels the user is not a member of."""
-        print(f"\n=== Getting available channels for user {user_id} ===")
-        # Get public channels
-        response = self.table.query(
+        # Query GSI2 for user's channel memberships (just need IDs)
+        membership_response = self.table.query(
+            IndexName='GSI2',
+            KeyConditionExpression=Key('GSI2PK').eq(f'USER#{user_id}'),
+            ProjectionExpression='GSI2SK'  # Only get channel IDs
+        )
+        
+        # Query GSI1 for public channels
+        public_response = self.table.query(
             IndexName='GSI1',
             KeyConditionExpression=Key('GSI1PK').eq('TYPE#public')
         )
         
-        # Filter out channels user is already member of
-        user_channels = self.get_channels_for_user(user_id)
-        user_channel_ids = {c.id for c in user_channels}
-        print(f"User is already member of channels: {user_channel_ids}")
+        # Process results
+        user_channel_ids = {item['GSI2SK'].split('#')[1] for item in membership_response['Items']}
         
         channels = []
-        for item in response['Items']:
-            cleaned = self._clean_item(item)
-            if cleaned['id'] not in user_channel_ids:
-                print(f"Adding available channel: {cleaned['name']}")
-                channels.append(Channel(**cleaned))
-            else:
-                print(f"Skipping channel {cleaned['name']} as user is already a member")
+        for item in public_response['Items']:
+            channel_id = item['id']
+            if channel_id not in user_channel_ids:
+                channels.append(Channel(**self._clean_item(item)))
+                
         return channels
 
     def get_dm_channel(self, user1_id: str, user2_id: str) -> Optional[Channel]:
@@ -177,12 +215,8 @@ class ChannelService(BaseService):
 
     def add_channel_member(self, channel_id: str, user_id: str) -> None:
         """Add a member to a channel."""
-        print(f"\n=== Adding user {user_id} to channel {channel_id} ===")
-        timestamp = self._now()
-        
         # First check if channel exists
         channel = self.get_channel_by_id(channel_id)
-        print(f"Channel exists check: {channel is not None}")
         if not channel:
             raise ValueError("Channel not found")
         
@@ -201,6 +235,7 @@ class ChannelService(BaseService):
         if 'Item' in response:
             raise ValueError("User is already a member")
         
+        timestamp = self._now()
         item = {
             'PK': f'CHANNEL#{channel_id}',
             'SK': f'MEMBER#{user_id}',
@@ -211,29 +246,41 @@ class ChannelService(BaseService):
         }
         
         try:
-            print(f"Attempting to add member item: {item}")
             self.table.put_item(Item=item)
-            print("Successfully added channel member")
         except Exception as e:
-            print(f"Error adding channel member: {str(e)}")
-            print(f"Error type: {type(e)}")
+            logging.error(f"Error adding channel member: {str(e)}")
             raise
 
     def get_channel_members(self, channel_id: str) -> List[dict]:
         """Get members of a channel"""
+        # Get member records
         response = self.table.query(
             KeyConditionExpression=Key('PK').eq(f'CHANNEL#{channel_id}') & 
                                  Key('SK').begins_with('MEMBER#')
         )
         
+        if not response['Items']:
+            return []
+            
+        # Extract user IDs and batch get user data
+        user_ids = [item['SK'].split('#')[1] for item in response['Items']]
+        users = {
+            user.id: user 
+            for user in self.user_service._batch_get_users(user_ids)
+        }
+        
+        # Process members
         members = []
         for item in response['Items']:
             user_id = item['SK'].split('#')[1]
-            user = self.user_service.get_user_by_id(user_id)
-            if user:
+            if user_id in users:
+                user = users[user_id]
                 members.append({
                     'id': user.id,
-                    'name': user.name
+                    'name': user.name,
+                    'email': user.email,
+                    'joined_at': item.get('joined_at'),
+                    'last_read': item.get('last_read')
                 })
                 
         return members
@@ -241,8 +288,8 @@ class ChannelService(BaseService):
     def get_channel_message_count(self, channel_id: str) -> int:
         """Get the number of messages in a channel."""
         response = self.table.query(
-            KeyConditionExpression=Key('PK').eq(f'CHANNEL#{channel_id}') & 
-                                 Key('SK').begins_with('MSG#'),
+            IndexName='GSI1',
+            KeyConditionExpression=Key('GSI1PK').eq(f'CHANNEL#{channel_id}'),
             Select='COUNT'
         )
         
@@ -262,20 +309,32 @@ class ChannelService(BaseService):
 
     def mark_channel_read(self, channel_id: str, user_id: str) -> None:
         """Mark all current messages in a channel as read for a user."""
-        # Verify user is a member
-        members = self.get_channel_members(channel_id)
-        if not any(m['id'] == user_id for m in members):
+        # Get existing member record
+        if not self.is_channel_member(channel_id, user_id):
             raise ValueError("User is not a member")
             
-        timestamp = self._now()
+        # Update the member's last_read timestamp while preserving other fields
+        response = self.table.get_item(
+            Key={
+                'PK': f'CHANNEL#{channel_id}',
+                'SK': f'MEMBER#{user_id}'
+            }
+        )
+        item = response['Item']
+        item['last_read'] = self._now()
         
-        # Update the member's last_read timestamp
-        item = {
-            'PK': f'CHANNEL#{channel_id}',
-            'SK': f'MEMBER#{user_id}',
-            'GSI2PK': f'USER#{user_id}',
-            'GSI2SK': f'CHANNEL#{channel_id}',
-            'last_read': timestamp
-        }
-        
-        self.table.put_item(Item=item) 
+        try:
+            self.table.put_item(Item=item)
+        except Exception as e:
+            logging.error(f"Error marking channel as read: {str(e)}")
+            raise
+            
+    def is_channel_member(self, channel_id: str, user_id: str) -> bool:
+        """Check if a user is a member of a channel."""
+        response = self.table.get_item(
+            Key={
+                'PK': f'CHANNEL#{channel_id}',
+                'SK': f'MEMBER#{user_id}'
+            }
+        )
+        return 'Item' in response 

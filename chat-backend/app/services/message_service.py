@@ -8,6 +8,7 @@ from ..models.reaction import Reaction
 from .base_service import BaseService
 from .user_service import UserService
 from .channel_service import ChannelService
+import time
 
 class MessageService(BaseService):
     def __init__(self, table_name: str = None):
@@ -37,7 +38,7 @@ class MessageService(BaseService):
         message_id = self._generate_id()
         timestamp = self._now()
         
-        # Create main message item - new format
+        # Create message item
         item = {
             'PK': f'MSG#{message_id}',
             'SK': f'MSG#{message_id}',
@@ -61,29 +62,8 @@ class MessageService(BaseService):
         if attachments:
             item['attachments'] = attachments
 
-        # Write new format
+        # Write to DynamoDB
         self.table.put_item(Item=item)
-        
-        # Write old format for backward compatibility
-        old_item = {
-            'PK': f'CHANNEL#{channel_id}',
-            'SK': f'MSG#{timestamp}#{message_id}',
-            'GSI1PK': f'USER#{user_id}',
-            'GSI1SK': f'TS#{timestamp}',
-            'id': message_id,
-            'channel_id': channel_id,
-            'user_id': user_id,
-            'content': content,
-            'created_at': timestamp,
-            'reactions': {},
-            'version': 1
-        }
-        if thread_id:
-            old_item['thread_id'] = thread_id
-        if attachments:
-            old_item['attachments'] = attachments
-            
-        self.table.put_item(Item=old_item)
         
         # Index words for search
         if content:
@@ -97,7 +77,8 @@ class MessageService(BaseService):
                     'SK': f'MESSAGE#{message_id}',
                     'GSI3PK': f'CONTENT#{word}',
                     'GSI3SK': f'TS#{timestamp}',
-                    'message_id': message_id
+                    'message_id': message_id,
+                    'channel_id': channel_id
                 }
                 self.table.put_item(Item=word_item)
             print("Word indexing complete")
@@ -111,7 +92,6 @@ class MessageService(BaseService):
 
     def get_message(self, message_id: str) -> Optional[Message]:
         """Get a message by ID"""
-        # Try new format first
         response = self.table.get_item(
             Key={
                 'PK': f'MSG#{message_id}',
@@ -119,29 +99,11 @@ class MessageService(BaseService):
             }
         )
         
-        if 'Item' in response:
-            item = self._clean_item(response['Item'])
-            item['reactions'] = response['Item'].get('reactions', {})
-            message = Message(**item)
-            
-            # Add user data
-            user = self.user_service.get_user_by_id(message.user_id)
-            if user:
-                message.user = user
-                
-            return message
-            
-        # Fall back to old format
-        response = self.table.scan(
-            FilterExpression=Attr('id').eq(message_id) & 
-                           Attr('SK').begins_with('MSG#')
-        )
-        
-        if not response['Items']:
+        if 'Item' not in response:
             return None
             
-        item = self._clean_item(response['Items'][0])
-        item['reactions'] = response['Items'][0].get('reactions', {})
+        item = self._clean_item(response['Item'])
+        item['reactions'] = response['Item'].get('reactions', {})
         message = Message(**item)
         
         # Add user data
@@ -153,12 +115,19 @@ class MessageService(BaseService):
 
     def get_messages(self, channel_id: str, before: str = None, limit: int = 50) -> List[Message]:
         """Get messages from a channel"""
+        start_time = time.time()
+        print("\n" + "="*50)
+        print(f"GETTING MESSAGES FOR CHANNEL {channel_id}")
+        print("="*50)
+        
         # Verify channel exists
+        channel_start = time.time()
+        print("\n[1/4] Looking up channel...")
         channel = self.channel_service.get_channel_by_id(channel_id)
         if not channel:
             raise ValueError("Channel not found")
+        print(f"✓ Channel lookup took: {time.time() - channel_start:.3f}s")
             
-        # Try new format first
         query_params = {
             'IndexName': 'GSI1',
             'KeyConditionExpression': Key('GSI1PK').eq(f'CHANNEL#{channel_id}'),
@@ -171,46 +140,26 @@ class MessageService(BaseService):
                 'GSI1PK': f'CHANNEL#{channel_id}',
                 'GSI1SK': f'TS#{before}'
             }
-            
-        response = self.table.query(**query_params)
         
-        if response['Items']:
-            # Get all unique user IDs first
-            user_ids = set(item['user_id'] for item in response['Items'])
-            users = {user.id: user for user in [self.user_service.get_user_by_id(uid) for uid in user_ids] if user}
-            
-            messages = []
-            for item in response['Items']:
-                cleaned = self._clean_item(item)
-                cleaned['reactions'] = item.get('reactions', {})
-                
-                message = Message(**cleaned)
-                if message.user_id in users:
-                    message.user = users[message.user_id]
-                messages.append(message)
-            
-            return messages
-            
-        # Fall back to old format
-        query_params = {
-            'KeyConditionExpression': Key('PK').eq(f'CHANNEL#{channel_id}') & 
-                                    Key('SK').begins_with('MSG#'),
-            'Limit': limit,
-            'ScanIndexForward': True  # Return in chronological order
-        }
-        
-        if before:
-            query_params['ExclusiveStartKey'] = {
-                'PK': f'CHANNEL#{channel_id}',
-                'SK': f'MSG#{before}'
-            }
-            
+        # Query messages
+        print("\n[2/4] Querying messages...")
+        query_start = time.time()    
         response = self.table.query(**query_params)
+        print(f"✓ DynamoDB query took: {time.time() - query_start:.3f}s")
+        print(f"✓ Found {len(response['Items'])} messages")
         
         # Get all unique user IDs first
+        print("\n[3/4] Looking up user data...")
+        users_start = time.time()
         user_ids = set(item['user_id'] for item in response['Items'])
-        users = {user.id: user for user in [self.user_service.get_user_by_id(uid) for uid in user_ids] if user}
+        print(f"✓ Found {len(user_ids)} unique users")
+        print(f"✓ User IDs: {user_ids}")
+        users = {user.id: user for user in self.user_service._batch_get_users(user_ids)}
+        print(f"✓ User data lookup took: {time.time() - users_start:.3f}s")
         
+        # Process messages
+        print("\n[4/4] Processing messages...")
+        process_start = time.time()
         messages = []
         for item in response['Items']:
             cleaned = self._clean_item(item)
@@ -220,43 +169,43 @@ class MessageService(BaseService):
             if message.user_id in users:
                 message.user = users[message.user_id]
             messages.append(message)
+        print(f"✓ Message processing took: {time.time() - process_start:.3f}s")
         
+        total_time = time.time() - start_time
+        print("\n" + "-"*50)
+        print(f"TOTAL TIME: {total_time:.3f}s")
+        print("-"*50 + "\n")
         return messages
 
     def get_thread_messages(self, thread_id: str) -> List[Message]:
         """Get messages in a thread"""
-        # Try new format first
+        start_time = time.time()
+        print("\n" + "="*50)
+        print(f"GETTING THREAD MESSAGES FOR {thread_id}")
+        print("="*50)
+        
+        # Query messages
+        print("\n[1/3] Querying messages...")
+        query_start = time.time()
         response = self.table.query(
             IndexName='GSI1',
             KeyConditionExpression=Key('GSI1PK').eq(f'THREAD#{thread_id}')
         )
-        
-        if response['Items']:
-            # Get all unique user IDs first
-            user_ids = set(item['user_id'] for item in response['Items'])
-            users = {user.id: user for user in [self.user_service.get_user_by_id(uid) for uid in user_ids] if user}
-            
-            messages = []
-            for item in response['Items']:
-                cleaned = self._clean_item(item)
-                cleaned['reactions'] = item.get('reactions', {})
-                
-                message = Message(**cleaned)
-                if message.user_id in users:
-                    message.user = users[message.user_id]
-                messages.append(message)
-            
-            return messages
-            
-        # Fall back to old format
-        response = self.table.scan(
-            FilterExpression=Attr('thread_id').eq(thread_id)
-        )
+        print(f"✓ DynamoDB query took: {time.time() - query_start:.3f}s")
+        print(f"✓ Found {len(response['Items'])} messages")
         
         # Get all unique user IDs first
+        print("\n[2/3] Looking up user data...")
+        users_start = time.time()
         user_ids = set(item['user_id'] for item in response['Items'])
-        users = {user.id: user for user in [self.user_service.get_user_by_id(uid) for uid in user_ids] if user}
+        print(f"✓ Found {len(user_ids)} unique users")
+        print(f"✓ User IDs: {user_ids}")
+        users = {user.id: user for user in self.user_service._batch_get_users(user_ids)}
+        print(f"✓ User data lookup took: {time.time() - users_start:.3f}s")
         
+        # Process messages
+        print("\n[3/3] Processing messages...")
+        process_start = time.time()
         messages = []
         for item in response['Items']:
             cleaned = self._clean_item(item)
@@ -266,7 +215,12 @@ class MessageService(BaseService):
             if message.user_id in users:
                 message.user = users[message.user_id]
             messages.append(message)
+        print(f"✓ Message processing took: {time.time() - process_start:.3f}s")
         
+        total_time = time.time() - start_time
+        print("\n" + "-"*50)
+        print(f"TOTAL TIME: {total_time:.3f}s")
+        print("-"*50 + "\n")
         return messages
 
     def add_reaction(self, message_id: str, user_id: str, emoji: str) -> Reaction:
@@ -276,7 +230,7 @@ class MessageService(BaseService):
         print(f"Emoji: {emoji}")
         timestamp = self._now()
         
-        # First get the message to get its channel_id and created_at
+        # First get the message
         message = self.get_message(message_id)
         if not message:
             raise ValueError("Message not found")
@@ -299,24 +253,11 @@ class MessageService(BaseService):
             
         print(f"Final reactions map to save: {reactions}")
             
-        # Update both new and old format
-        # New format
+        # Update reactions
         self.table.update_item(
             Key={
                 'PK': f'MSG#{message_id}',
                 'SK': f'MSG#{message_id}'
-            },
-            UpdateExpression='SET reactions = :reactions',
-            ExpressionAttributeValues={
-                ':reactions': reactions
-            }
-        )
-        
-        # Old format
-        self.table.update_item(
-            Key={
-                'PK': f'CHANNEL#{message.channel_id}',
-                'SK': f'MSG#{message.created_at}#{message_id}'
             },
             UpdateExpression='SET reactions = :reactions',
             ExpressionAttributeValues={
@@ -333,74 +274,13 @@ class MessageService(BaseService):
             created_at=timestamp
         )
 
-    def update_message(self, message_id: str, content: str) -> Message:
-        """Update a message's content and maintain edit history"""
-        timestamp = self._now()
-        
-        # First get the message
-        message = self.get_message(message_id)
-        if not message:
-            raise ValueError("Message not found")
-            
-        # Verify channel still exists
-        channel = self.channel_service.get_channel_by_id(message.channel_id)
-        if not channel:
-            raise ValueError("Channel not found")
-            
-        # Create a version entry with the current content and timestamp
-        version_entry = {
-            'content': message.content,  # Current content becomes old version
-            'edited_at': message.edited_at if hasattr(message, 'edited_at') else message.created_at
-        }
-            
-        # Update both new and old format
-        # New format
-        self.table.update_item(
-            Key={
-                'PK': f'MSG#{message_id}',
-                'SK': f'MSG#{message_id}'
-            },
-            UpdateExpression='SET content = :content, edited_at = :edited_at, is_edited = :is_edited, edit_history = list_append(if_not_exists(edit_history, :empty_list), :version)',
-            ExpressionAttributeValues={
-                ':content': content,
-                ':edited_at': timestamp,
-                ':is_edited': True,
-                ':version': [version_entry],
-                ':empty_list': []
-            }
-        )
-        
-        # Old format
-        self.table.update_item(
-            Key={
-                'PK': f'CHANNEL#{message.channel_id}',
-                'SK': f'MSG#{message.created_at}#{message_id}'
-            },
-            UpdateExpression='SET content = :content, edited_at = :edited_at, is_edited = :is_edited, edit_history = list_append(if_not_exists(edit_history, :empty_list), :version)',
-            ExpressionAttributeValues={
-                ':content': content,
-                ':edited_at': timestamp,
-                ':is_edited': True,
-                ':version': [version_entry],
-                ':empty_list': []
-            }
-        )
-            
-        # Get updated message and attach user data
-        updated_message = self.get_message(message_id)
-        if updated_message:
-            user = self.user_service.get_user_by_id(updated_message.user_id)
-            if user:
-                updated_message.user = user
-        return updated_message 
-
     def remove_reaction(self, message_id: str, user_id: str, emoji: str) -> None:
         """Remove a reaction from a message"""
         print(f"\n=== Removing reaction from message {message_id} ===")
         print(f"User: {user_id}")
         print(f"Emoji: {emoji}")
         
-        # First get the message to get its channel_id and created_at
+        # First get the message
         message = self.get_message(message_id)
         if not message:
             raise ValueError("Message not found")
@@ -426,8 +306,7 @@ class MessageService(BaseService):
             
         print(f"Final reactions map to save: {reactions}")
             
-        # Update both new and old format
-        # New format
+        # Update reactions
         self.table.update_item(
             Key={
                 'PK': f'MSG#{message_id}',
@@ -439,16 +318,48 @@ class MessageService(BaseService):
             }
         )
         
-        # Old format
+        print("Saved reactions to DynamoDB")
+
+    def update_message(self, message_id: str, content: str) -> Message:
+        """Update a message's content and maintain edit history"""
+        timestamp = self._now()
+        
+        # First get the message
+        message = self.get_message(message_id)
+        if not message:
+            raise ValueError("Message not found")
+            
+        # Verify channel still exists
+        channel = self.channel_service.get_channel_by_id(message.channel_id)
+        if not channel:
+            raise ValueError("Channel not found")
+            
+        # Create a version entry with the current content and timestamp
+        version_entry = {
+            'content': message.content,  # Current content becomes old version
+            'edited_at': message.edited_at if hasattr(message, 'edited_at') else message.created_at
+        }
+            
+        # Update message
         self.table.update_item(
             Key={
-                'PK': f'CHANNEL#{message.channel_id}',
-                'SK': f'MSG#{message.created_at}#{message_id}'
+                'PK': f'MSG#{message_id}',
+                'SK': f'MSG#{message_id}'
             },
-            UpdateExpression='SET reactions = :reactions',
+            UpdateExpression='SET content = :content, edited_at = :edited_at, is_edited = :is_edited, edit_history = list_append(if_not_exists(edit_history, :empty_list), :version)',
             ExpressionAttributeValues={
-                ':reactions': reactions
+                ':content': content,
+                ':edited_at': timestamp,
+                ':is_edited': True,
+                ':version': [version_entry],
+                ':empty_list': []
             }
         )
-        
-        print("Saved reactions to DynamoDB") 
+            
+        # Get updated message and attach user data
+        updated_message = self.get_message(message_id)
+        if updated_message:
+            user = self.user_service.get_user_by_id(updated_message.user_id)
+            if user:
+                updated_message.user = user
+        return updated_message 

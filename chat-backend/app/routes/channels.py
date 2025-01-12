@@ -8,6 +8,7 @@ from app.storage.file_storage import FileStorage
 import os
 from datetime import datetime, timezone
 import uuid
+import logging
 
 bp = Blueprint('channels', __name__)
 db = DynamoDB(table_name=os.environ.get('DYNAMODB_TABLE', 'chat_app_jrw'))
@@ -143,23 +144,33 @@ def mark_channel_read(channel_id):
             return jsonify({'error': 'Channel not found'}), 404
             
         # Check if user is member of channel
-        members = db.get_channel_members(channel_id)
-        if not any(m['id'] == request.user_id for m in members):
+        if not db.is_channel_member(channel_id, request.user_id):
             return jsonify({'error': 'Not a member of this channel'}), 403
             
         # Mark channel as read
-        db.mark_channel_read(channel_id, request.user_id)
+        try:
+            db.mark_channel_read(channel_id, request.user_id)
+        except Exception as e:
+            logging.error(f"Error in mark_channel_read: {str(e)}")
+            logging.error(f"Error type: {type(e)}")
+            raise
         
         return jsonify({'success': True})
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:
+        logging.error(f"Outer error in mark_channel_read route: {str(e)}")
+        logging.error(f"Outer error type: {type(e)}")
         return jsonify({'error': 'Failed to mark channel as read'}), 500
 
 @bp.route('/<channel_id>/messages')
 @auth_required
 def get_channel_messages(channel_id):
-    messages = db.get_messages(channel_id)
+    before = request.args.get('before')
+    limit = int(request.args.get('limit', 50))
+    messages = db.get_messages(channel_id, before=before, limit=limit)
+    if messages is None:
+        return jsonify({'error': 'Failed to get messages'}), 500
     return jsonify([message.to_dict() for message in messages])
 
 @bp.route('/<channel_id>/messages', methods=['POST'])

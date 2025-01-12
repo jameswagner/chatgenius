@@ -4,57 +4,56 @@ from app.models.user import User
 from .base_service import BaseService
 
 class UserService(BaseService):
-    def create_user(self, email: str, name: str, password: str, type: str = "user", id: str = None) -> User:
-        """Create a new user."""
-        # Generate ID if not provided
-        user_id = id if id else self._generate_id()
-
-        # Create user item
+    def create_user(self, email: str, name: str, password: str, type: str = 'user', id: str = None) -> User:
+        """Create a new user"""
+        # Check if user exists using GSI2
+        response = self.table.query(
+            IndexName='GSI2',
+            KeyConditionExpression=Key('GSI2PK').eq(f'EMAIL#{email}')
+        )
+        if response['Items']:
+            raise ValueError("User already exists")
+            
+        user_id = id or self._generate_id()
+        timestamp = self._now()
+        
         item = {
-            "PK": f"USER#{user_id}",
-            "SK": "#METADATA",
-            "GSI1PK": f"TYPE#{type}",
-            "GSI1SK": f"EMAIL#{email}",
-            "id": user_id,
-            "email": email,
-            "name": name,
-            "password": password,
-            "type": type,
-            "created_at": self._now(),
-            "status": "online"
+            'PK': f'USER#{user_id}',
+            'SK': '#METADATA',
+            'GSI1PK': f'TYPE#{type}',
+            'GSI1SK': f'NAME#{name}',
+            'GSI2PK': f'EMAIL#{email}',
+            'GSI2SK': '#METADATA',
+            'id': user_id,
+            'email': email,
+            'name': name,
+            'password': password,
+            'type': type,
+            'status': 'online',
+            'last_active': timestamp,
+            'created_at': timestamp
         }
-
-        print(f"Attempting to create user with item: {item}")
-
+        
         try:
             self.table.put_item(Item=item)
-            print(f"User item created successfully with ID: {user_id}")
             return User(**self._clean_item(item))
         except Exception as e:
-            print(f"Error creating user: {e}")
-            raise
+            print(f"Error creating user {name}: {str(e)}")
+            raise e
 
     def get_user_by_email(self, email: str) -> Optional[User]:
         """Get a user by their email address."""
         print(f"\n=== Getting user by email: {email} ===")
         try:
             response = self.table.query(
-                IndexName='GSI1',
-                KeyConditionExpression=Key('GSI1PK').eq('TYPE#user') & Key('GSI1SK').eq(f'EMAIL#{email}')
+                IndexName='GSI2',
+                KeyConditionExpression=Key('GSI2PK').eq(f'EMAIL#{email}')
             )
             
             if response['Items']:
                 item = response['Items'][0]
                 print(f"Found user: {item['name']} (id: {item['id']})")
-                return User(
-                    id=item['id'],
-                    email=item['email'],
-                    name=item['name'],
-                    type=item['type'],
-                    created_at=item['created_at'],
-                    status=item.get('status', 'offline'),
-                    password=item.get('password')
-                )
+                return User(**self._clean_item(item))
             print("No user found with this email")
             return None
         except Exception as e:
@@ -86,38 +85,42 @@ class UserService(BaseService):
         """Update a user's online status."""
         timestamp = self._now()
         
-        # Update user status
+        # Update user status without modifying GSI1PK
         self.table.update_item(
             Key={
                 'PK': f'USER#{user_id}',
                 'SK': '#METADATA'
             },
-            UpdateExpression='SET #status = :status, #last_active = :ts, GSI1PK = :gsi1pk',
+            UpdateExpression='SET #status = :status, #last_active = :ts',
             ExpressionAttributeNames={
                 '#status': 'status',
                 '#last_active': 'last_active'
             },
             ExpressionAttributeValues={
                 ':status': status,
-                ':ts': timestamp,
-                ':gsi1pk': f'STATUS#{status}'
+                ':ts': timestamp
             }
         )
         
         return self.get_user_by_id(user_id)
 
     def get_all_users(self) -> List[Dict]:
-        """Get all users except password field."""
+        """Get all users"""
         response = self.table.query(
             IndexName='GSI1',
             KeyConditionExpression=Key('GSI1PK').eq('TYPE#user')
         )
         
-        # Clean items and only return necessary fields
-        return [{
-            'id': self._clean_item(item)['id'],
-            'name': self._clean_item(item)['name']
-        } for item in response['Items']]
+        users = []
+        for item in response.get('Items', []):
+            cleaned = self._clean_item(item)
+            users.append({
+                'id': cleaned['id'],
+                'name': cleaned['name'],
+                'email': cleaned['email']
+            })
+            
+        return users
 
     def get_persona_users(self) -> List[User]:
         """Get all persona users."""

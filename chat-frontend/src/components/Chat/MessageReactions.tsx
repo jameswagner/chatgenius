@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Message } from '../../types/chat';
 import { api } from '../../services/api';
 import data from '@emoji-mart/data';
@@ -13,7 +13,17 @@ interface MessageReactionsProps {
 export const MessageReactions = ({ message, onReactionChange }: MessageReactionsProps) => {
   const [showPicker, setShowPicker] = useState(false);
   const [hoveredEmoji, setHoveredEmoji] = useState<string | null>(null);
+  const [pickerPosition, setPickerPosition] = useState<'top' | 'bottom'>('bottom');
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const currentUserId = localStorage.getItem('userId');
+
+  useEffect(() => {
+    if (showPicker && buttonRef.current) {
+      const buttonRect = buttonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - buttonRect.top;
+      setPickerPosition(spaceBelow > 400 ? 'bottom' : 'top');
+    }
+  }, [showPicker]);
 
   // Mock user names - in real app, you'd want to get these from your user store
   const userNames: { [key: string]: string } = {
@@ -50,6 +60,7 @@ export const MessageReactions = ({ message, onReactionChange }: MessageReactions
         {Object.entries(message.reactions || {}).map(([emoji, users]) => (
           <button
             key={emoji}
+            data-testid={`reaction-${emoji}-${message.id}`}
             onClick={() => hasUserReacted(emoji) ? handleRemoveReaction(emoji) : handleAddReaction(emoji)}
             onMouseEnter={() => setHoveredEmoji(emoji)}
             onMouseLeave={() => setHoveredEmoji(null)}
@@ -70,6 +81,8 @@ export const MessageReactions = ({ message, onReactionChange }: MessageReactions
           </button>
         ))}
         <button
+          ref={buttonRef}
+          data-testid={`add-reaction-${message.id}`}
           onClick={() => setShowPicker(!showPicker)}
           className="px-2 py-0.5 rounded text-sm bg-gray-100 hover:bg-gray-200"
         >
@@ -78,7 +91,10 @@ export const MessageReactions = ({ message, onReactionChange }: MessageReactions
       </div>
 
       {showPicker && (
-        <div className="absolute bottom-full mb-2 z-10">
+        <div 
+          data-testid={`emoji-picker-${message.id}`} 
+          className={`absolute z-10 ${pickerPosition === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2'}`}
+        >
           <Picker
             data={data}
             onEmojiSelect={(emoji: any) => handleAddReaction(emoji.native)}

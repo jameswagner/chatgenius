@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, current_app
 from app.auth.auth_service import AuthService, auth_required
 from app.db.ddb import DynamoDB
 import os
+import logging
 
 bp = Blueprint('auth', __name__)
 db = DynamoDB(table_name=os.environ.get('DYNAMODB_TABLE', 'chat_app_jrw'))
@@ -89,3 +90,20 @@ def search_users():
         
     users = db.search_users(query)
     return jsonify([user.to_dict() for user in users]) 
+
+@bp.route('/logout', methods=['OPTIONS', 'POST'])
+def logout():
+    if request.method == 'OPTIONS':
+        return '', 200
+        
+    @auth_required
+    def handle_logout():
+        try:
+            auth_service = get_auth_service()
+            auth_service.logout(request.user_id)
+            return jsonify({'message': 'Logged out successfully'})
+        except Exception as e:
+            logging.error(f"Error during logout: {str(e)}")
+            return jsonify({'error': 'Logout failed'}), 500
+            
+    return handle_logout() 

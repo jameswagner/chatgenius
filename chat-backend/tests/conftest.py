@@ -86,7 +86,7 @@ from selenium.webdriver.firefox.options import Options as FirefoxOptions
 #         print("\n=== Flask server STDERR ===")
 #         print(stderr)
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def test_db():
     """Test database fixture"""
     db = DynamoDB(table_name='chat_app_jrw_test')

@@ -208,6 +208,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels, messages }:
                 e.stopPropagation();
                 setShowUserSelector(true);
               }}
+              data-testid="new-dm-button"
               className="text-sm text-blue-400 hover:text-blue-300"
             >
               +
@@ -294,7 +295,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels, messages }:
                 >
                   #{channel.name}
                   <button
-                    data-testid="join-channel-button"
+                    data-testid={`join-channel-button-${channel.id}`}
                     onClick={() => handleJoinChannel(channel.id)}
                     className="text-sm text-blue-400 hover:text-blue-300"
                   >

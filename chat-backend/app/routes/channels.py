@@ -18,14 +18,14 @@ file_storage = FileStorage()
 @bp.route('', defaults={'trailing_slash': ''})
 @bp.route('/')
 @auth_required
-def get_channels():
+def get_channels(trailing_slash=''):
     channels = db.get_channels_for_user(request.user_id)
     return jsonify([channel.to_dict() for channel in channels])
 
 @bp.route('', methods=['POST'], defaults={'trailing_slash': ''})
 @bp.route('/', methods=['POST'])
 @auth_required
-def create_channel():
+def create_channel(trailing_slash=''):
     user_id = request.user_id
     data = request.get_json()
     
@@ -177,62 +177,41 @@ def get_channel_messages(channel_id):
 @auth_required
 def create_message(channel_id):
     try:
-        print("\n=== Creating Message with Attachments ===")
         content = request.form.get('content', '')
         thread_id = request.form.get('thread_id')
         files = request.files.getlist('files')
-        
-        print(f"Content: {content}")
-        print(f"Thread ID: {thread_id}")
-        print(f"Number of files: {len(files)}")
-        
         attachments = []
 
         # Process file uploads
         if files:
-            print("\nProcessing files:")
             for file in files:
                 if file.filename:
                     try:
-                        print(f"\nProcessing file: {file.filename}")
                         filename = secure_filename(file.filename)
                         saved_filename = str(uuid.uuid4().hex[:8]) + '.' + filename.rsplit('.', 1)[1].lower()
-                        print(f"Secured filename: {saved_filename}")
                         
                         # Use direct upload folder path
                         upload_folder = 'uploads'
                         save_path = os.path.join(upload_folder, saved_filename)
-                        print(f"Saving to: {save_path}")
                         
                         # Ensure upload directory exists
                         os.makedirs(upload_folder, exist_ok=True)
                         
                         file.save(save_path)
-                        print(f"File saved successfully locally")
                         
                         # Upload to S3
-                        print(f"Uploading to S3...")
                         with open(save_path, 'rb') as f:
                             if file_storage.save_file(f, saved_filename):
-                                print(f"File uploaded to S3 successfully")
                                 attachments.append(saved_filename)
                                 # Clean up local file
                                 os.remove(save_path)
-                                print(f"Local file cleaned up")
                             else:
-                                print(f"Failed to upload file to S3")
                                 raise Exception("Failed to upload file to S3")
                     except Exception as e:
-                        print(f"Error handling file: {str(e)}")
-                        print(f"Error type: {type(e)}")
+                        logging.error(f"Error handling file upload: {str(e)}")
                         # Clean up local file if it exists
                         if os.path.exists(save_path):
                             os.remove(save_path)
-                            print(f"Cleaned up local file after error")
-                else:
-                    print("Skipping file with no filename")
-
-        print(f"\nFinal attachments list: {attachments}")
 
         # Create message
         message = db.create_message(
@@ -244,7 +223,6 @@ def create_message(channel_id):
         )
         
         message_data = message.to_dict()
-        print(f"\nCreated message: {message_data}")
         
         # Get channel info to check if it's a DM and emit channel.new if it's the first message
         channel = db.get_channel_by_id(channel_id)
@@ -252,18 +230,14 @@ def create_message(channel_id):
             # Get all messages in channel to check if this is the first one
             messages = db.get_messages(channel_id)
             if len(messages) == 1:  # This is the first message
-                print("First message in DM channel, emitting channel.new")
                 # Get channel with members for proper name display
                 channel.members = db.get_channel_members(channel_id)
-                print(f"Emitting channel with members: {channel.members}")
                 socketio.emit('channel.new', channel.to_dict())
         
         socketio.emit('message.new', message_data, room=channel_id)
         return jsonify(message_data)
 
     except Exception as e:
-        print(f"\nError creating message: {str(e)}")
-        print(f"Error type: {type(e)}")
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/uploads/<filename>')

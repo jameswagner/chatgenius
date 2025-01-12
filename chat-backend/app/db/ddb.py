@@ -20,7 +20,8 @@ class DynamoDB:
         Table Structure:
         - Users: 
             PK=USER#{id} SK=#METADATA
-            GSI1PK=TYPE#user GSI1SK=NAME#{name}
+            GSI1PK=TYPE#{type} GSI1SK=NAME#{name}
+            GSI2PK=EMAIL#{email} GSI2SK=#METADATA
             
         - Channels:
             PK=CHANNEL#{id} SK=#METADATA
@@ -28,10 +29,12 @@ class DynamoDB:
             
         - Channel Members:
             PK=CHANNEL#{channel_id} SK=MEMBER#{user_id}
+            GSI2PK=USER#{user_id} GSI2SK=CHANNEL#{channel_id}
             
         - Messages:
-            PK=CHANNEL#{channel_id} SK=MSG#{timestamp}#{id}
-            GSI1PK=USER#{user_id} GSI1SK=TS#{timestamp}
+            PK=MSG#{message_id} SK=MSG#{message_id}
+            GSI1PK=CHANNEL#{channel_id} or THREAD#{thread_id} GSI1SK=TS#{timestamp}
+            GSI2PK=USER#{user_id} GSI2SK=TS#{timestamp}
             Attributes:
                 - reactions: Map<emoji, List<user_id>>
                 - thread_id: Optional[str]
@@ -85,6 +88,9 @@ class DynamoDB:
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
 
+    def create_user(self, email: str, name: str, password: str, type: str = 'user') -> User:
+        return self.user_service.create_user(email, name, password, type)
+
     """
     Data Structure:
     
@@ -103,9 +109,6 @@ class DynamoDB:
     GSI3: Global Secondary Index for message search (CONTENT#<word> | TS#<timestamp>)
     """
     
-    def create_user(self, email: str, name: str, password: str, type: str = 'user') -> User:
-        return self.user_service.create_user(email, name, password, type)
-
     def get_user_by_email(self, email: str) -> Optional[User]:
         return self.user_service.get_user_by_email(email)
 

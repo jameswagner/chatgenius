@@ -9,13 +9,13 @@ bp = Blueprint('users', __name__)
 db = DynamoDB(table_name=os.environ.get('DYNAMODB_TABLE', 'chat_app_jrw'))
 socketio = get_socketio()
 
-@bp.route('/')
+@bp.route('/', strict_slashes=False)
 @auth_required
 def get_users():
-    users = db.query_users()
+    users = db.user_service.get_all_users()
     return jsonify(users)
 
-@bp.route('/status', methods=['PUT'])
+@bp.route('/status', methods=['PUT'], strict_slashes=False)
 @auth_required
 def update_status():
     """Update the current user's status"""
@@ -53,7 +53,7 @@ def update_status():
         print(f"[STATUS] ERROR: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@bp.route('/me')
+@bp.route('/me', strict_slashes=False)
 @auth_required
 def get_current_user():
     """Get current user's data"""
@@ -62,7 +62,7 @@ def get_current_user():
         return jsonify({'error': 'User not found'}), 404
     return jsonify(user.to_dict())
 
-@bp.route('/personas', methods=['GET'])
+@bp.route('/personas', methods=['GET'], strict_slashes=False)
 def get_personas():
     personas = [
         {'id': '1', 'name': 'Alice', 'email': 'alice@example.com'},

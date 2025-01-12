@@ -37,8 +37,35 @@ class MessageService(BaseService):
         message_id = self._generate_id()
         timestamp = self._now()
         
-        # Create main message item
+        # Create main message item - new format
         item = {
+            'PK': f'MSG#{message_id}',
+            'SK': f'MSG#{message_id}',
+            'GSI1PK': f'CHANNEL#{channel_id}',
+            'GSI1SK': f'TS#{timestamp}',
+            'GSI2PK': f'USER#{user_id}',
+            'GSI2SK': f'TS#{timestamp}',
+            'id': message_id,
+            'channel_id': channel_id,
+            'user_id': user_id,
+            'content': content,
+            'created_at': timestamp,
+            'reactions': {},
+            'version': 1
+        }
+        
+        if thread_id:
+            item['thread_id'] = thread_id
+            item['GSI1PK'] = f'THREAD#{thread_id}'
+            
+        if attachments:
+            item['attachments'] = attachments
+
+        # Write new format
+        self.table.put_item(Item=item)
+        
+        # Write old format for backward compatibility
+        old_item = {
             'PK': f'CHANNEL#{channel_id}',
             'SK': f'MSG#{timestamp}#{message_id}',
             'GSI1PK': f'USER#{user_id}',
@@ -48,27 +75,22 @@ class MessageService(BaseService):
             'user_id': user_id,
             'content': content,
             'created_at': timestamp,
+            'reactions': {},
             'version': 1
         }
-        
         if thread_id:
-            item['thread_id'] = thread_id
-            
+            old_item['thread_id'] = thread_id
         if attachments:
-            item['attachments'] = attachments
-
-        print(f"\nPutting message item: {item}")
-        self.table.put_item(Item=item)
-        print("Message item created successfully")
+            old_item['attachments'] = attachments
+            
+        self.table.put_item(Item=old_item)
         
         # Index words for search
         if content:
             print("\nIndexing words for search...")
-            # Split content into words and normalize
             words = set(content.lower().split())
             print(f"Words to index: {words}")
             
-            # Create index items for each word
             for word in words:
                 word_item = {
                     'PK': f'WORD#{word}',
@@ -77,12 +99,10 @@ class MessageService(BaseService):
                     'GSI3SK': f'TS#{timestamp}',
                     'message_id': message_id
                 }
-                print(f"Creating index item for word '{word}': {word_item}")
                 self.table.put_item(Item=word_item)
             print("Word indexing complete")
         
         message = Message(**self._clean_item(item))
-        user = self.user_service.get_user_by_id(user_id)
         if user:
             message.user = user
             print(f"Added user data to message: {user.name}")
@@ -90,6 +110,28 @@ class MessageService(BaseService):
         return message
 
     def get_message(self, message_id: str) -> Optional[Message]:
+        """Get a message by ID"""
+        # Try new format first
+        response = self.table.get_item(
+            Key={
+                'PK': f'MSG#{message_id}',
+                'SK': f'MSG#{message_id}'
+            }
+        )
+        
+        if 'Item' in response:
+            item = self._clean_item(response['Item'])
+            item['reactions'] = response['Item'].get('reactions', {})
+            message = Message(**item)
+            
+            # Add user data
+            user = self.user_service.get_user_by_id(message.user_id)
+            if user:
+                message.user = user
+                
+            return message
+            
+        # Fall back to old format
         response = self.table.scan(
             FilterExpression=Attr('id').eq(message_id) & 
                            Attr('SK').begins_with('MSG#')
@@ -99,7 +141,6 @@ class MessageService(BaseService):
             return None
             
         item = self._clean_item(response['Items'][0])
-        # Get reactions from the item itself since they're denormalized
         item['reactions'] = response['Items'][0].get('reactions', {})
         message = Message(**item)
         
@@ -111,16 +152,51 @@ class MessageService(BaseService):
         return message
 
     def get_messages(self, channel_id: str, before: str = None, limit: int = 50) -> List[Message]:
+        """Get messages from a channel"""
         # Verify channel exists
         channel = self.channel_service.get_channel_by_id(channel_id)
         if not channel:
             raise ValueError("Channel not found")
             
+        # Try new format first
+        query_params = {
+            'IndexName': 'GSI1',
+            'KeyConditionExpression': Key('GSI1PK').eq(f'CHANNEL#{channel_id}'),
+            'Limit': limit,
+            'ScanIndexForward': True  # Return in chronological order
+        }
+        
+        if before:
+            query_params['ExclusiveStartKey'] = {
+                'GSI1PK': f'CHANNEL#{channel_id}',
+                'GSI1SK': f'TS#{before}'
+            }
+            
+        response = self.table.query(**query_params)
+        
+        if response['Items']:
+            # Get all unique user IDs first
+            user_ids = set(item['user_id'] for item in response['Items'])
+            users = {user.id: user for user in [self.user_service.get_user_by_id(uid) for uid in user_ids] if user}
+            
+            messages = []
+            for item in response['Items']:
+                cleaned = self._clean_item(item)
+                cleaned['reactions'] = item.get('reactions', {})
+                
+                message = Message(**cleaned)
+                if message.user_id in users:
+                    message.user = users[message.user_id]
+                messages.append(message)
+            
+            return messages
+            
+        # Fall back to old format
         query_params = {
             'KeyConditionExpression': Key('PK').eq(f'CHANNEL#{channel_id}') & 
                                     Key('SK').begins_with('MSG#'),
             'Limit': limit,
-            'ScanIndexForward': True
+            'ScanIndexForward': True  # Return in chronological order
         }
         
         if before:
@@ -130,6 +206,52 @@ class MessageService(BaseService):
             }
             
         response = self.table.query(**query_params)
+        
+        # Get all unique user IDs first
+        user_ids = set(item['user_id'] for item in response['Items'])
+        users = {user.id: user for user in [self.user_service.get_user_by_id(uid) for uid in user_ids] if user}
+        
+        messages = []
+        for item in response['Items']:
+            cleaned = self._clean_item(item)
+            cleaned['reactions'] = item.get('reactions', {})
+            
+            message = Message(**cleaned)
+            if message.user_id in users:
+                message.user = users[message.user_id]
+            messages.append(message)
+        
+        return messages
+
+    def get_thread_messages(self, thread_id: str) -> List[Message]:
+        """Get messages in a thread"""
+        # Try new format first
+        response = self.table.query(
+            IndexName='GSI1',
+            KeyConditionExpression=Key('GSI1PK').eq(f'THREAD#{thread_id}')
+        )
+        
+        if response['Items']:
+            # Get all unique user IDs first
+            user_ids = set(item['user_id'] for item in response['Items'])
+            users = {user.id: user for user in [self.user_service.get_user_by_id(uid) for uid in user_ids] if user}
+            
+            messages = []
+            for item in response['Items']:
+                cleaned = self._clean_item(item)
+                cleaned['reactions'] = item.get('reactions', {})
+                
+                message = Message(**cleaned)
+                if message.user_id in users:
+                    message.user = users[message.user_id]
+                messages.append(message)
+            
+            return messages
+            
+        # Fall back to old format
+        response = self.table.scan(
+            FilterExpression=Attr('thread_id').eq(thread_id)
+        )
         
         # Get all unique user IDs first
         user_ids = set(item['user_id'] for item in response['Items'])
@@ -177,7 +299,20 @@ class MessageService(BaseService):
             
         print(f"Final reactions map to save: {reactions}")
             
-        # Update the entire reactions map
+        # Update both new and old format
+        # New format
+        self.table.update_item(
+            Key={
+                'PK': f'MSG#{message_id}',
+                'SK': f'MSG#{message_id}'
+            },
+            UpdateExpression='SET reactions = :reactions',
+            ExpressionAttributeValues={
+                ':reactions': reactions
+            }
+        )
+        
+        # Old format
         self.table.update_item(
             Key={
                 'PK': f'CHANNEL#{message.channel_id}',
@@ -188,6 +323,7 @@ class MessageService(BaseService):
                 ':reactions': reactions
             }
         )
+        
         print("Saved reactions to DynamoDB")
         
         return Reaction(
@@ -197,49 +333,11 @@ class MessageService(BaseService):
             created_at=timestamp
         )
 
-
-    def get_thread_messages(self, thread_id: str) -> List[Message]:
-        response = self.table.scan(
-            FilterExpression=Attr('thread_id').eq(thread_id)
-        )
-        
-        # Get all unique user IDs first
-        user_ids = set(item['user_id'] for item in response['Items'])
-        users = {user.id: user for user in [self.user_service.get_user_by_id(uid) for uid in user_ids] if user}
-        
-        messages = []
-        for item in response['Items']:
-            cleaned = self._clean_item(item)
-            cleaned['reactions'] = item.get('reactions', {})
-            
-            message = Message(**cleaned)
-            if message.user_id in users:
-                message.user = users[message.user_id]
-            messages.append(message)
-        
-        return messages
-
-    def get_message_reactions(self, message_id: str) -> List[Reaction]:
-        response = self.table.query(
-            KeyConditionExpression=Key('PK').eq(f'MESSAGE#{message_id}') & 
-                                 Key('SK').begins_with('REACTION#')
-        )
-        return [Reaction(**self._clean_item(item)) for item in response['Items']]
-
-    def remove_reaction(self, message_id: str, user_id: str, emoji: str) -> None:
-        self.table.delete_item(
-            Key={
-                'PK': f'MESSAGE#{message_id}',
-                'SK': f'REACTION#{user_id}#{emoji}'
-            }
-        )
-
-  
     def update_message(self, message_id: str, content: str) -> Message:
         """Update a message's content and maintain edit history"""
         timestamp = self._now()
         
-        # First get the message to get its channel_id and created_at
+        # First get the message
         message = self.get_message(message_id)
         if not message:
             raise ValueError("Message not found")
@@ -255,7 +353,24 @@ class MessageService(BaseService):
             'edited_at': message.edited_at if hasattr(message, 'edited_at') else message.created_at
         }
             
-        # Update the message
+        # Update both new and old format
+        # New format
+        self.table.update_item(
+            Key={
+                'PK': f'MSG#{message_id}',
+                'SK': f'MSG#{message_id}'
+            },
+            UpdateExpression='SET content = :content, edited_at = :edited_at, is_edited = :is_edited, edit_history = list_append(if_not_exists(edit_history, :empty_list), :version)',
+            ExpressionAttributeValues={
+                ':content': content,
+                ':edited_at': timestamp,
+                ':is_edited': True,
+                ':version': [version_entry],
+                ':empty_list': []
+            }
+        )
+        
+        # Old format
         self.table.update_item(
             Key={
                 'PK': f'CHANNEL#{message.channel_id}',
@@ -278,3 +393,62 @@ class MessageService(BaseService):
             if user:
                 updated_message.user = user
         return updated_message 
+
+    def remove_reaction(self, message_id: str, user_id: str, emoji: str) -> None:
+        """Remove a reaction from a message"""
+        print(f"\n=== Removing reaction from message {message_id} ===")
+        print(f"User: {user_id}")
+        print(f"Emoji: {emoji}")
+        
+        # First get the message to get its channel_id and created_at
+        message = self.get_message(message_id)
+        if not message:
+            raise ValueError("Message not found")
+            
+        print(f"Found message. Current reactions: {message.reactions}")
+            
+        # Get existing reactions map from the message item
+        reactions = message.reactions if message.reactions else {}
+        print(f"Initial reactions map: {reactions}")
+            
+        # Remove the reaction
+        if emoji in reactions and user_id in reactions[emoji]:
+            print(f"Removing user {user_id} from reactions for {emoji}")
+            reactions[emoji].remove(user_id)
+            
+            # Remove the emoji key if no users are left
+            if not reactions[emoji]:
+                print(f"No users left for {emoji}, removing emoji key")
+                del reactions[emoji]
+        else:
+            print(f"User {user_id} has not reacted with {emoji}")
+            return
+            
+        print(f"Final reactions map to save: {reactions}")
+            
+        # Update both new and old format
+        # New format
+        self.table.update_item(
+            Key={
+                'PK': f'MSG#{message_id}',
+                'SK': f'MSG#{message_id}'
+            },
+            UpdateExpression='SET reactions = :reactions',
+            ExpressionAttributeValues={
+                ':reactions': reactions
+            }
+        )
+        
+        # Old format
+        self.table.update_item(
+            Key={
+                'PK': f'CHANNEL#{message.channel_id}',
+                'SK': f'MSG#{message.created_at}#{message_id}'
+            },
+            UpdateExpression='SET reactions = :reactions',
+            ExpressionAttributeValues={
+                ':reactions': reactions
+            }
+        )
+        
+        print("Saved reactions to DynamoDB") 

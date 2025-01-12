@@ -4,35 +4,34 @@ from app.models.user import User
 from .base_service import BaseService
 
 class UserService(BaseService):
-    def create_user(self, email: str, name: str, password: str, type: str = "user") -> User:
+    def create_user(self, email: str, name: str, password: str, type: str = "user", id: str = None) -> User:
         """Create a new user."""
-        print(f"\n=== Creating user: email={email}, name={name}, type={type} ===")
-        user_id = self._generate_id()
-        timestamp = self._now()
-        
+        # Generate ID if not provided
+        user_id = id if id else self._generate_id()
+
+        # Create user item
+        item = {
+            "PK": f"USER#{user_id}",
+            "SK": "#METADATA",
+            "GSI1PK": f"TYPE#{type}",
+            "GSI1SK": f"EMAIL#{email}",
+            "id": user_id,
+            "email": email,
+            "name": name,
+            "password": password,
+            "type": type,
+            "created_at": self._now(),
+            "status": "online"
+        }
+
+        print(f"Attempting to create user with item: {item}")
+
         try:
-            item = {
-                'PK': f'USER#{user_id}',
-                'SK': '#METADATA',
-                'GSI1PK': 'TYPE#user',
-                'GSI1SK': f'EMAIL#{email}',
-                'id': user_id,
-                'email': email,
-                'name': name,
-                'password': password,
-                'type': type,
-                'created_at': timestamp,
-                'status': 'online'
-            }
-            print(f"Attempting to create user with item: {item}")
-            
             self.table.put_item(Item=item)
             print(f"User item created successfully with ID: {user_id}")
-            
-            return User(id=user_id, email=email, name=name, type=type, created_at=timestamp, status='online')
+            return User(**self._clean_item(item))
         except Exception as e:
-            print(f"Error creating user: {str(e)}")
-            print(f"Error type: {type(e)}")
+            print(f"Error creating user: {e}")
             raise
 
     def get_user_by_email(self, email: str) -> Optional[User]:

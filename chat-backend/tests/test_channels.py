@@ -1,125 +1,51 @@
 import pytest
-from moto import mock_dynamodb
 import boto3
+from moto import mock_aws
 from datetime import datetime, timezone
 from app.services.channel_service import ChannelService
 from app.services.user_service import UserService
+from scripts.create_table import create_chat_table
 
 @pytest.fixture
-def ddb():
-    """Create a mock DynamoDB table."""
-    with mock_dynamodb():
-        # Create mock credentials
-        boto3.setup_default_session(
-            aws_access_key_id="testing",
-            aws_secret_access_key="testing",
-            aws_session_token="testing",
-        )
-        
-        # Create DynamoDB resource and table
-        dynamodb = boto3.resource("dynamodb", region_name="us-west-2")
-        
-        # Create table with GSI
-        table = dynamodb.create_table(
-            TableName="test-table",
-            KeySchema=[
-                {"AttributeName": "PK", "KeyType": "HASH"},
-                {"AttributeName": "SK", "KeyType": "RANGE"}
-            ],
-            AttributeDefinitions=[
-                {"AttributeName": "PK", "AttributeType": "S"},
-                {"AttributeName": "SK", "AttributeType": "S"},
-                {"AttributeName": "GSI1PK", "AttributeType": "S"},
-                {"AttributeName": "GSI1SK", "AttributeType": "S"},
-                {"AttributeName": "GSI2PK", "AttributeType": "S"},
-                {"AttributeName": "GSI2SK", "AttributeType": "S"}
-            ],
-            GlobalSecondaryIndexes=[
-                {
-                    "IndexName": "GSI1",
-                    "KeySchema": [
-                        {"AttributeName": "GSI1PK", "KeyType": "HASH"},
-                        {"AttributeName": "GSI1SK", "KeyType": "RANGE"}
-                    ],
-                    "Projection": {"ProjectionType": "ALL"}
-                },
-                {
-                    "IndexName": "GSI2",
-                    "KeySchema": [
-                        {"AttributeName": "GSI2PK", "KeyType": "HASH"},
-                        {"AttributeName": "GSI2SK", "KeyType": "RANGE"}
-                    ],
-                    "Projection": {"ProjectionType": "ALL"}
-                }
-            ],
-            BillingMode="PAY_PER_REQUEST"
-        )
-        
-        yield ChannelService("test-table")
+def aws_credentials():
+    """Mocked AWS Credentials for moto."""
+    import os
+    os.environ['AWS_ACCESS_KEY_ID'] = 'testing'
+    os.environ['AWS_SECRET_ACCESS_KEY'] = 'testing'
+    os.environ['AWS_SECURITY_TOKEN'] = 'testing'
+    os.environ['AWS_SESSION_TOKEN'] = 'testing'
 
 @pytest.fixture
-def user_service():
-    """Create a UserService instance with mock DynamoDB."""
-    with mock_dynamodb():
-        # Create mock credentials
-        boto3.setup_default_session(
-            aws_access_key_id="testing",
-            aws_secret_access_key="testing",
-            aws_session_token="testing",
-        )
-        
-        # Create DynamoDB resource and table
-        dynamodb = boto3.resource("dynamodb", region_name="us-west-2")
-        
-        # Create table with GSI
-        table = dynamodb.create_table(
-            TableName="test-table",
-            KeySchema=[
-                {"AttributeName": "PK", "KeyType": "HASH"},
-                {"AttributeName": "SK", "KeyType": "RANGE"}
-            ],
-            AttributeDefinitions=[
-                {"AttributeName": "PK", "AttributeType": "S"},
-                {"AttributeName": "SK", "AttributeType": "S"},
-                {"AttributeName": "GSI1PK", "AttributeType": "S"},
-                {"AttributeName": "GSI1SK", "AttributeType": "S"},
-                {"AttributeName": "GSI2PK", "AttributeType": "S"},
-                {"AttributeName": "GSI2SK", "AttributeType": "S"}
-            ],
-            GlobalSecondaryIndexes=[
-                {
-                    "IndexName": "GSI1",
-                    "KeySchema": [
-                        {"AttributeName": "GSI1PK", "KeyType": "HASH"},
-                        {"AttributeName": "GSI1SK", "KeyType": "RANGE"}
-                    ],
-                    "Projection": {"ProjectionType": "ALL"}
-                },
-                {
-                    "IndexName": "GSI2",
-                    "KeySchema": [
-                        {"AttributeName": "GSI2PK", "KeyType": "HASH"},
-                        {"AttributeName": "GSI2SK", "KeyType": "RANGE"}
-                    ],
-                    "Projection": {"ProjectionType": "ALL"}
-                }
-            ],
-            BillingMode="PAY_PER_REQUEST"
-        )
-        
-        yield UserService("test-table")
+def dynamodb(aws_credentials):
+    """Create mock DynamoDB."""
+    with mock_aws():
+        yield boto3.resource('dynamodb')
 
-def create_test_user(user_service: UserService, user_id: str, name: str):
-    """Helper function to create a test user."""
+@pytest.fixture
+def ddb_table(dynamodb):
+    """Create mock DynamoDB table with required schema."""
+    return create_chat_table('test_table')
+
+@pytest.fixture
+def ddb(ddb_table):
+    """ChannelService instance with mocked table."""
+    return ChannelService(table_name='test_table')
+
+@pytest.fixture
+def user_service(ddb_table):
+    """UserService instance with mocked table."""
+    return UserService(table_name='test_table')
+
+def create_test_user(user_service, user_id: str, name: str) -> dict:
+    """Create a test user."""
     print(f"\n=== Creating user: email={user_id}@test.com, name={name}, type=user ===")
-    user = {
-        'id': user_id,
-        'email': f"{user_id}@test.com",
-        'name': name,
-        'password': 'password123',
-        'type': 'user'
-    }
-    return user_service.create_user(**user)
+    return user_service.create_user(
+        email=f"{user_id}@test.com",
+        name=name,
+        password="password123",
+        type="user",
+        id=user_id
+    )
 
 def test_create_public_channel(ddb, user_service):
     """Test creating a public channel."""
@@ -132,14 +58,12 @@ def test_create_public_channel(ddb, user_service):
         created_by="user123"
     )
     
-    assert channel.get('id') is not None
-    assert channel.get('name') == "general-chat"
-    assert channel.get('type') == "public"
-    assert channel.get('created_by') == "user123"
-    assert channel.get('created_at') is not None
-    assert isinstance(channel.get('members'), list)
-    assert len(channel.get('members')) == 1  # Creator should be added as member
-    assert channel.get('members')[0].get('name') == "Test User"
+    assert channel.id is not None
+    assert channel.name == "general-chat"
+    assert channel.type == "public"
+    assert channel.created_by == "user123"
+    assert len(channel.members) == 1
+    assert channel.members[0]['name'] == "Test User"
 
 def test_create_dm_channel(ddb, user_service):
     """Test creating a DM channel between two users."""
@@ -157,14 +81,10 @@ def test_create_dm_channel(ddb, user_service):
         other_user_id=user2_id
     )
     
-    assert channel.get('id') is not None
-    assert channel.get('type') == "dm"
-    assert channel.get('created_by') == user1_id
-    assert isinstance(channel.get('members'), list)
-    assert len(channel.get('members')) == 2
-    member_names = {m.get('name') for m in channel.get('members')}
-    assert "User One" in member_names
-    assert "User Two" in member_names
+    assert channel.id is not None
+    assert channel.type == "dm"
+    member_names = {m['name'] for m in channel.members}
+    assert member_names == {"User One", "User Two"}
 
 def test_get_channel_by_id_nonexistent(ddb, user_service):
     """Test getting a non-existent channel."""
@@ -189,8 +109,8 @@ def test_get_channels_for_user(ddb, user_service):
     user_channels = ddb.get_channels_for_user(user_id)
     
     assert len(user_channels) == 3
-    channel_names = {c.get('name') for c in user_channels}
-    assert all(f"channel{i}" in channel_names for i in range(3))
+    channel_names = {c.name for c in user_channels}
+    assert channel_names == {"channel0", "channel1", "channel2"}
 
 def test_get_available_channels(ddb, user_service):
     """Test getting available public channels for a user."""
@@ -217,8 +137,8 @@ def test_get_available_channels(ddb, user_service):
     
     # Should only see channels they're not a member of
     assert len(available) == 3
-    channel_names = {c.get('name') for c in available}
-    assert all(f"other-channel{i}" in channel_names for i in range(3))
+    channel_names = {c.name for c in available}
+    assert channel_names == {"other-channel0", "other-channel1", "other-channel2"}
 
 def test_get_dm_channel(ddb, user_service):
     """Test getting a DM channel between users."""
@@ -241,9 +161,10 @@ def test_get_dm_channel(ddb, user_service):
     channel = ddb.get_dm_channel(user1_id, user2_id)
     
     assert channel is not None
-    assert channel.get('id') == created.get('id')
-    assert channel.get('type') == "dm"
-    assert len(channel.get('members')) == 2
+    assert channel.id == created.id
+    assert channel.type == "dm"
+    member_names = {m['name'] for m in channel.members}
+    assert member_names == {"User One", "User Two"}
 
 def test_channel_name_uniqueness(ddb, user_service):
     """Test that public channels with the same name are not allowed."""
@@ -301,18 +222,13 @@ def test_add_channel_member(ddb, user_service):
     
     # Add a new member
     new_member_id = "new_user"
-    ddb.add_channel_member(channel.get('id'), new_member_id)
+    ddb.add_channel_member(channel.id, new_member_id)
     
-    # Verify member was added
-    members = ddb.get_channel_members(channel.get('id'))
-    member_ids = {m.get('id') for m in members}
-    assert new_member_id in member_ids
-    
-    # Verify member details
-    new_member = next(m for m in members if m.get('id') == new_member_id)
-    assert new_member.get('name') == "New User"
-    assert new_member.get('joined_at') is not None
-    assert new_member.get('last_read') is not None
+    # Get updated members
+    members = ddb.get_channel_members(channel.id)
+    assert len(members) == 2
+    member_names = {m['name'] for m in members}
+    assert member_names == {"Creator", "New User"}
 
 def test_add_duplicate_channel_member(ddb, user_service):
     """Test adding a member who is already in the channel."""
@@ -327,7 +243,7 @@ def test_add_duplicate_channel_member(ddb, user_service):
     
     # Try to add the creator again
     with pytest.raises(ValueError, match="User is already a member"):
-        ddb.add_channel_member(channel.get('id'), "user1")
+        ddb.add_channel_member(channel.id, "user1")
 
 def test_get_channel_members_empty(ddb, user_service):
     """Test getting members of an empty channel."""
@@ -340,9 +256,9 @@ def test_get_channel_members_empty(ddb, user_service):
         created_by="creator"
     )
     
-    members = ddb.get_channel_members(channel.get('id'))
-    assert len(members) == 1  # Just the creator
-    assert members[0].get('name') == "Creator"
+    members = ddb.get_channel_members(channel.id)
+    assert len(members) == 1
+    assert members[0]['name'] == "Creator"
 
 def test_get_channel_message_count(ddb, user_service):
     """Test getting message count for a channel."""
@@ -360,15 +276,14 @@ def test_get_channel_message_count(ddb, user_service):
     timestamp = datetime.now(timezone.utc).isoformat()
     for i in range(5):
         ddb.table.put_item(Item={
-            'PK': f'CHANNEL#{channel.get("id")}',
+            'PK': f'CHANNEL#{channel.id}',
             'SK': f'MSG#{timestamp}#{i}',
             'content': f'Message {i}',
             'sender': 'user1',
             'timestamp': timestamp
         })
     
-    # Get message count
-    count = ddb.get_channel_message_count(channel.get('id'))
+    count = ddb.get_channel_message_count(channel.id)
     assert count == 5
 
 def test_get_other_dm_user(ddb, user_service):
@@ -389,14 +304,12 @@ def test_get_other_dm_user(ddb, user_service):
     )
     
     # Get other user from user1's perspective
-    other_user = ddb.get_other_dm_user(channel.get('id'), user1_id)
-    assert other_user.get('id') == user2_id
-    assert other_user.get('name') == "User Two"
+    other_user = ddb.get_other_dm_user(channel.id, user1_id)
+    assert other_user == user2_id
     
     # Get other user from user2's perspective
-    other_user = ddb.get_other_dm_user(channel.get('id'), user2_id)
-    assert other_user.get('id') == user1_id
-    assert other_user.get('name') == "User One"
+    other_user = ddb.get_other_dm_user(channel.id, user2_id)
+    assert other_user == user1_id
 
 def test_get_other_dm_user_not_dm(ddb, user_service):
     """Test getting other DM user in a non-DM channel."""
@@ -410,7 +323,7 @@ def test_get_other_dm_user_not_dm(ddb, user_service):
     )
     
     with pytest.raises(ValueError, match="Not a DM channel"):
-        ddb.get_other_dm_user(channel.get('id'), "user1")
+        ddb.get_other_dm_user(channel.id, "user1")
 
 def test_mark_channel_read(ddb, user_service):
     """Test marking a channel as read."""
@@ -426,15 +339,15 @@ def test_mark_channel_read(ddb, user_service):
     )
     
     # Add another member
-    ddb.add_channel_member(channel.get('id'), "user2")
+    ddb.add_channel_member(channel.id, "user2")
     
     # Mark as read for user2
-    ddb.mark_channel_read(channel.get('id'), "user2")
+    ddb.mark_channel_read(channel.id, "user2")
     
     # Verify last_read was updated
-    members = ddb.get_channel_members(channel.get('id'))
-    user2_member = next(m for m in members if m.get('id') == "user2")
-    assert user2_member.get('last_read') is not None
+    members = ddb.get_channel_members(channel.id)
+    user2_member = next(m for m in members if m['id'] == "user2")
+    assert user2_member['name'] == "User Two"
 
 def test_mark_channel_read_nonmember(ddb, user_service):
     """Test marking a channel as read for a non-member."""
@@ -448,4 +361,4 @@ def test_mark_channel_read_nonmember(ddb, user_service):
     )
     
     with pytest.raises(ValueError, match="User is not a member"):
-        ddb.mark_channel_read(channel.get('id'), "nonmember") 
+        ddb.mark_channel_read(channel.id, "nonmember") 

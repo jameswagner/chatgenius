@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Any
+from typing import Optional, List, Dict, Set
 from datetime import datetime, timezone
 import uuid
 import boto3
@@ -368,25 +368,6 @@ class DynamoDB:
             
         return message
 
-    def _get_message_reactions(self, message_id: str) -> dict:
-        """Get reactions grouped by emoji with arrays of user IDs"""
-        response = self.table.query(
-            KeyConditionExpression=Key('PK').eq(f'MESSAGE#{message_id}') & 
-                                 Key('SK').begins_with('REACTION#')
-        )
-        
-        # Group reactions by emoji
-        reactions = {}
-        for item in response['Items']:
-            cleaned = self._clean_item(item)
-            emoji = cleaned['emoji']
-            user_id = cleaned['user_id']
-            if emoji not in reactions:
-                reactions[emoji] = []
-            reactions[emoji].append(user_id)
-            
-        return reactions
-
     def get_message(self, message_id: str) -> Optional[Message]:
         response = self.table.scan(
             FilterExpression=Attr('id').eq(message_id) & 
@@ -397,8 +378,8 @@ class DynamoDB:
             return None
             
         item = self._clean_item(response['Items'][0])
-        # Add reactions to the message
-        item['reactions'] = self._get_message_reactions(message_id)
+        # Get reactions from the item itself since they're denormalized
+        item['reactions'] = response['Items'][0].get('reactions', {})
         return Message(**item)
 
     def get_messages(self, channel_id: str, before: str = None, limit: int = 50) -> List[Message]:
@@ -406,7 +387,7 @@ class DynamoDB:
             'KeyConditionExpression': Key('PK').eq(f'CHANNEL#{channel_id}') & 
                                     Key('SK').begins_with('MSG#'),
             'Limit': limit,
-            'ScanIndexForward': True  # Changed to True for ascending order (oldest first)
+            'ScanIndexForward': True
         }
         
         if before:
@@ -417,35 +398,92 @@ class DynamoDB:
             
         response = self.table.query(**query_params)
         
+        # Get all unique user IDs first
+        user_ids = set(item['user_id'] for item in response['Items'])
+        users = {user.id: user for user in self._batch_get_users(user_ids)}
+        
         messages = []
         for item in response['Items']:
             cleaned = self._clean_item(item)
+            cleaned['reactions'] = item.get('reactions', {})
             
-            cleaned['reactions'] = self._get_message_reactions(cleaned['id'])
             message = Message(**cleaned)
-            user = self.get_user_by_id(message.user_id)
-            if user:
-                message.user = user
+            if message.user_id in users:
+                message.user = users[message.user_id]
             messages.append(message)
         
         return messages
 
+    def _batch_get_users(self, user_ids: Set[str]) -> List[User]:
+        """Batch get multiple users by their IDs"""
+        if not user_ids:
+            return []
+            
+        # DynamoDB batch_get_item has a limit of 100 items
+        users = []
+        for chunk in [list(user_ids)[i:i + 100] for i in range(0, len(user_ids), 100)]:
+            request_items = {
+                self.table.name: {
+                    'Keys': [{'PK': f'USER#{user_id}', 'SK': '#METADATA'} for user_id in chunk],
+                    'ConsistentRead': False
+                }
+            }
+            response = self.dynamodb.batch_get_item(RequestItems=request_items)
+            
+            for item in response['Responses'][self.table.name]:
+                users.append(User(**self._clean_item(item)))
+                
+        return users
+
     def add_reaction(self, message_id: str, user_id: str, emoji: str) -> Reaction:
+        """Add a reaction by updating the reactions map in the message item"""
+        print(f"\n=== Adding reaction to message {message_id} ===")
+        print(f"User: {user_id}")
+        print(f"Emoji: {emoji}")
         timestamp = self._now()
         
-        item = {
-            'PK': f'MESSAGE#{message_id}',
-            'SK': f'REACTION#{user_id}#{emoji}',
-            'GSI1PK': f'EMOJI#{emoji}',
-            'GSI1SK': f'TS#{timestamp}',
-            'message_id': message_id,
-            'user_id': user_id,
-            'emoji': emoji,
-            'created_at': timestamp
-        }
+        # First get the message to get its channel_id and created_at
+        message = self.get_message(message_id)
+        if not message:
+            raise ValueError("Message not found")
+            
+        print(f"Found message. Current reactions: {message.reactions}")
+            
+        # Get existing reactions map from the message item
+        reactions = message.reactions if message.reactions else {}
+        print(f"Initial reactions map: {reactions}")
+            
+        # Add the new reaction
+        if emoji not in reactions:
+            print(f"Creating new reactions list for emoji {emoji}")
+            reactions[emoji] = []
+        if user_id not in reactions[emoji]:
+            print(f"Adding user {user_id} to reactions for {emoji}")
+            reactions[emoji].append(user_id)
+        else:
+            print(f"User {user_id} already reacted with {emoji}")
+            
+        print(f"Final reactions map to save: {reactions}")
+            
+        # Update the entire reactions map
+        self.table.update_item(
+            Key={
+                'PK': f'CHANNEL#{message.channel_id}',
+                'SK': f'MSG#{message.created_at}#{message_id}'
+            },
+            UpdateExpression='SET reactions = :reactions',
+            ExpressionAttributeValues={
+                ':reactions': reactions
+            }
+        )
+        print("Saved reactions to DynamoDB")
         
-        self.table.put_item(Item=item)
-        return Reaction(**self._clean_item(item))
+        return Reaction(
+            message_id=message_id,
+            user_id=user_id,
+            emoji=emoji,
+            created_at=timestamp
+        )
 
     def search_messages(self, user_id: str, query: str) -> List[Message]:
         print(f"\n=== Searching messages for query: '{query}' ===")
@@ -482,19 +520,24 @@ class DynamoDB:
         return messages[:50]  # Limit results
 
     def get_thread_messages(self, thread_id: str) -> List[Message]:
-        # Scan for messages in thread (could be optimized with a GSI)
         response = self.table.scan(
             FilterExpression=Attr('thread_id').eq(thread_id)
         )
         
-        messages = [Message(**self._clean_item(item)) for item in response['Items']]
+        # Get all unique user IDs first
+        user_ids = set(item['user_id'] for item in response['Items'])
+        users = {user.id: user for user in self._batch_get_users(user_ids)}
         
-        # Fetch user info
-        for message in messages:
-            user = self.get_user_by_id(message.user_id)
-            if user:
-                message.user = user
-                
+        messages = []
+        for item in response['Items']:
+            cleaned = self._clean_item(item)
+            cleaned['reactions'] = item.get('reactions', {})
+            
+            message = Message(**cleaned)
+            if message.user_id in users:
+                message.user = users[message.user_id]
+            messages.append(message)
+        
         return messages
 
     def get_message_reactions(self, message_id: str) -> List[Reaction]:

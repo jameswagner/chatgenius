@@ -26,7 +26,7 @@ def create_app():
     # Register blueprints
     from app.routes import channels, health, auth, messages, users, uploads, search
     app.register_blueprint(channels.bp, url_prefix='/channels')
-    app.register_blueprint(health.bp, url_prefix='/health')
+    app.register_blueprint(health.bp)
     app.register_blueprint(auth.bp, url_prefix='/auth')
     app.register_blueprint(messages.bp, url_prefix='/messages')
     app.register_blueprint(users.bp, url_prefix='/users')

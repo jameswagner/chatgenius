@@ -245,4 +245,13 @@ client.interceptors.response.use(
   }
 );
 
+export const healthCheck = async () => {
+    try {
+        const response = await axios.get('/health');
+        return response.status === 200;
+    } catch (error) {
+        return false;
+    }
+};
+
 export default api; 

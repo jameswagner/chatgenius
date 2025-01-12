@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthPage } from './pages/Auth';
 import { ChatLayout } from './components/Chat/ChatLayout';
 import { useEffect, useState } from 'react';
+import { healthCheck } from './services/api';
 
 // Protected Route component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -18,6 +19,18 @@ function App() {
   useEffect(() => {
     // Check auth status on app load
     setIsInitialized(true);
+  }, []);
+
+  // Add health check route handler
+  useEffect(() => {
+    const handleHealth = async (e: any) => {
+      if (e.request.url.endsWith('/api/health')) {
+        e.respondWith(new Response('healthy', { status: 200 }));
+      }
+    };
+    
+    window.addEventListener('fetch', handleHealth);
+    return () => window.removeEventListener('fetch', handleHealth);
   }, []);
 
   if (!isInitialized) {

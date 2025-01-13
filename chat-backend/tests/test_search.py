@@ -2,11 +2,11 @@ import pytest
 import boto3
 from moto import mock_aws
 from datetime import datetime, timezone
-from app.services.search_service import SearchService
-from app.services.user_service import UserService
 from app.services.channel_service import ChannelService
+from app.services.user_service import UserService
+from app.services.search_service import SearchService
 from app.services.message_service import MessageService
-from scripts.create_table import create_chat_table
+from tests.utils import create_chat_table
 
 @pytest.fixture
 def aws_credentials():

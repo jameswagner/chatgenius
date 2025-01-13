@@ -10,6 +10,7 @@ import requests
 from pathlib import Path
 import sys
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from tests.utils import create_chat_table
 
 # @pytest.fixture(scope="session", autouse=True)
 # def flask_server():
@@ -186,7 +187,9 @@ from selenium.webdriver.firefox.options import Options as FirefoxOptions
 @pytest.fixture(scope="function")
 def test_db():
     """Test database fixture"""
-    db = DynamoDB(table_name='chat_app_jrw_test')
+    table_name = 'chat_app_jrw_test'
+    table = create_chat_table(table_name)
+    db = DynamoDB(table_name=table_name)
     
     # Print and clear existing items
     print("\n=== Current items in test database ===")

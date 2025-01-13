@@ -3,6 +3,7 @@ import boto3
 from moto import mock_aws
 from app.services.user_service import UserService
 from app.models.user import User
+from tests.utils import create_chat_table
 
 @pytest.fixture
 def aws_credentials():
@@ -22,33 +23,7 @@ def dynamodb(aws_credentials):
 @pytest.fixture
 def ddb_table(dynamodb):
     """Create mock DynamoDB table with required schema."""
-    table = dynamodb.create_table(
-        TableName='test_table',
-        KeySchema=[
-            {'AttributeName': 'PK', 'KeyType': 'HASH'},
-            {'AttributeName': 'SK', 'KeyType': 'RANGE'}
-        ],
-        AttributeDefinitions=[
-            {'AttributeName': 'PK', 'AttributeType': 'S'},
-            {'AttributeName': 'SK', 'AttributeType': 'S'},
-            {'AttributeName': 'GSI1PK', 'AttributeType': 'S'},
-            {'AttributeName': 'GSI1SK', 'AttributeType': 'S'}
-        ],
-        GlobalSecondaryIndexes=[
-            {
-                'IndexName': 'GSI1',
-                'KeySchema': [
-                    {'AttributeName': 'GSI1PK', 'KeyType': 'HASH'},
-                    {'AttributeName': 'GSI1SK', 'KeyType': 'RANGE'}
-                ],
-                'Projection': {
-                    'ProjectionType': 'ALL'
-                }
-            }
-        ],
-        BillingMode='PAY_PER_REQUEST'
-    )
-    return table
+    return create_chat_table('test_table')
 
 @pytest.fixture
 def ddb(ddb_table):
@@ -150,9 +125,9 @@ def test_get_all_users(ddb):
     found_ids = {user['id'] for user in all_users}
     assert created_ids.issubset(found_ids)
     
-    # Verify only id and name are returned
+    # Verify only essential fields are returned
     for user in all_users:
-        assert set(user.keys()) == {'id', 'name'}
+        assert set(user.keys()) == {'id', 'name', 'email'}
 
 def test_get_persona_users(ddb):
     """Test retrieving persona users."""

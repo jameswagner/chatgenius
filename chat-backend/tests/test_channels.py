@@ -4,7 +4,7 @@ from moto import mock_aws
 from datetime import datetime, timezone
 from app.services.channel_service import ChannelService
 from app.services.user_service import UserService
-from scripts.create_table import create_chat_table
+from tests.utils import create_chat_table
 from app.services.message_service import MessageService
 
 @pytest.fixture
@@ -36,6 +36,11 @@ def ddb(ddb_table):
 def user_service(ddb_table):
     """UserService instance with mocked table."""
     return UserService(table_name='test_table')
+
+@pytest.fixture
+def message_service(ddb_table):
+    """MessageService instance with mocked table."""
+    return MessageService(table_name='test_table')
 
 def create_test_user(user_service, user_id: str, name: str) -> dict:
     """Create a test user."""
@@ -331,18 +336,18 @@ def test_get_other_dm_user_not_dm(ddb, user_service):
     with pytest.raises(ValueError, match="Not a DM channel"):
         ddb.get_other_dm_user(channel.id, "user1")
 
-def test_mark_channel_read(ddb, user_service):
+def test_mark_channel_read(ddb, user_service, message_service):
     """Test marking a channel as read"""
     # Create a test user
-    user = ddb.create_user("test@example.com", "Test User", "password")
+    user = create_test_user(user_service, "test1", "Test User")
     
-    # Add user to channel
-    ddb.add_channel_member(channel.id, user.id)
+    # Create a channel
+    channel = ddb.create_channel("test-channel", "public", created_by=user.id)
     
     # Create some test messages
-    message1 = ddb.create_message(channel.id, user.id, "Message 1")
-    message2 = ddb.create_message(channel.id, user.id, "Message 2")
-    message3 = ddb.create_message(channel.id, user.id, "Message 3")
+    message1 = message_service.create_message(channel.id, user.id, "Message 1")
+    message2 = message_service.create_message(channel.id, user.id, "Message 2")
+    message3 = message_service.create_message(channel.id, user.id, "Message 3")
     
     # Get channels for user - should show unread messages
     channels = ddb.get_channels_for_user(user.id)
@@ -358,18 +363,18 @@ def test_mark_channel_read(ddb, user_service):
     assert channels[0].unread_count == 0
     
     # Add new message
-    message4 = ddb.create_message(channel.id, user.id, "Message 4")
+    message4 = message_service.create_message(channel.id, user.id, "Message 4")
     
     # Check unread count is now 1
     channels = ddb.get_channels_for_user(user.id)
     assert len(channels) == 1
     assert channels[0].unread_count == 1
 
-def test_unread_counts_multiple_channels(ddb):
+def test_unread_counts_multiple_channels(ddb, user_service, message_service):
     """Test unread counts across multiple channels"""
     # Create test users
-    user1 = ddb.create_user("user1@example.com", "User 1", "password")
-    user2 = ddb.create_user("user2@example.com", "User 2", "password")
+    user1 = create_test_user(user_service, "user1", "User 1")
+    user2 = create_test_user(user_service, "user2", "User 2")
     
     # Create two channels
     channel1 = ddb.create_channel("Channel 1", created_by=user1.id)
@@ -380,9 +385,9 @@ def test_unread_counts_multiple_channels(ddb):
     ddb.add_channel_member(channel2.id, user2.id)
     
     # Create messages in both channels
-    ddb.create_message(channel1.id, user1.id, "Channel 1 Message 1")
-    ddb.create_message(channel1.id, user1.id, "Channel 1 Message 2")
-    ddb.create_message(channel2.id, user1.id, "Channel 2 Message 1")
+    message_service.create_message(channel1.id, user1.id, "Channel 1 Message 1")
+    message_service.create_message(channel1.id, user1.id, "Channel 1 Message 2")
+    message_service.create_message(channel2.id, user1.id, "Channel 2 Message 1")
     
     # Check initial unread counts for user2
     channels = ddb.get_channels_for_user(user2.id)
@@ -402,7 +407,7 @@ def test_unread_counts_multiple_channels(ddb):
     assert channel2_data.unread_count == 1
     
     # Add new message to channel1
-    ddb.create_message(channel1.id, user1.id, "Channel 1 Message 3")
+    message_service.create_message(channel1.id, user1.id, "Channel 1 Message 3")
     
     # Verify counts after new message
     channels = ddb.get_channels_for_user(user2.id)
@@ -411,17 +416,17 @@ def test_unread_counts_multiple_channels(ddb):
     assert channel1_data.unread_count == 1
     assert channel2_data.unread_count == 1
 
-def test_mark_channel_read_permissions(ddb, channel):
+def test_mark_channel_read_permissions(ddb, user_service, message_service):
     """Test permissions for marking channel as read"""
     # Create test users
-    user1 = ddb.create_user("user1@example.com", "User 1", "password")
-    user2 = ddb.create_user("user2@example.com", "User 2", "password")
+    user1 = create_test_user(user_service, "user1", "User 1")
+    user2 = create_test_user(user_service, "user2", "User 2")
     
-    # Add only user1 to channel
-    ddb.add_channel_member(channel.id, user1.id)
+    # Create a channel and add only user1 to it
+    channel = ddb.create_channel("test-channel", "public", created_by=user1.id)
     
     # Create a test message
-    ddb.create_message(channel.id, user1.id, "Test Message")
+    message_service.create_message(channel.id, user1.id, "Test Message")
     
     # User1 should be able to mark as read
     ddb.mark_channel_read(channel.id, user1.id)

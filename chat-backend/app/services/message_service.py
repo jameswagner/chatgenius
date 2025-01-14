@@ -9,6 +9,7 @@ from .base_service import BaseService
 from .user_service import UserService
 from .channel_service import ChannelService
 import time
+import os
 
 class MessageService(BaseService):
     """Message service for managing chat messages in DynamoDB.
@@ -38,6 +39,12 @@ class MessageService(BaseService):
         super().__init__(table_name)
         self.user_service = UserService(table_name)
         self.channel_service = ChannelService(table_name)
+        self.dynamodb = boto3.resource(
+            'dynamodb',
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+            region_name=os.getenv('AWS_REGION')
+        )
         
     def create_message(self, channel_id: str, user_id: str, content: str, thread_id: str = None, attachments: List[str] = None, created_at: str = None) -> Message:
         """Create a new message.

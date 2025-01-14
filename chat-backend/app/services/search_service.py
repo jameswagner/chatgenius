@@ -4,12 +4,20 @@ from .base_service import BaseService
 from .channel_service import ChannelService
 from .user_service import UserService
 from ..models.message import Message
+import os
+import boto3
 
 class SearchService(BaseService):
     def __init__(self, table_name: str = None):
         super().__init__(table_name)
         self.channel_service = ChannelService(table_name)
         self.user_service = UserService(table_name)
+        self.dynamodb = boto3.resource(
+            'dynamodb',
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+            region_name=os.getenv('AWS_REGION')
+        )
 
     def get_message(self, message_id: str) -> Message:
         """Get a message by its ID"""

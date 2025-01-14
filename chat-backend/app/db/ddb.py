@@ -62,7 +62,12 @@ class DynamoDB:
         - Get user by username: Query GSI4 (NAME#{name})
         """
         self.table_name = table_name or os.getenv('DYNAMODB_TABLE', 'chat_app_jrw')
-        self.dynamodb = boto3.resource('dynamodb')
+        self.dynamodb = boto3.resource(
+            'dynamodb',
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+            region_name=os.getenv('AWS_REGION')
+        )
         self.table = self.dynamodb.Table(self.table_name)
         self.user_service = UserService(table_name)
         self.channel_service = ChannelService(table_name)

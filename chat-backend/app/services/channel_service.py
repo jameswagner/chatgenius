@@ -28,11 +28,19 @@ from .base_service import BaseService
 from .user_service import UserService
 from ..models.channel import Channel
 import time
+import boto3
+import os
 
 class ChannelService(BaseService):
     def __init__(self, table_name: str = None):
         super().__init__(table_name)
         self.user_service = UserService(table_name)
+        self.dynamodb = boto3.resource(
+            'dynamodb',
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+            region_name=os.getenv('AWS_REGION')
+        )
 
     def _clean_item(self, item: Dict) -> Dict:
         """Clean DynamoDB item for channel model creation"""

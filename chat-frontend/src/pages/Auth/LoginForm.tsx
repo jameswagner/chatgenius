@@ -41,13 +41,15 @@ export const LoginForm = () => {
         response = await api.auth.login(email, password);
       }
 
-      if (!response.token || !response.user_id) {
+      console.log('Server response:', response);
+
+      if (!response.token || !response.user.id) {
         setError('Invalid response from server');
         return;
       }
 
       localStorage.setItem('token', response.token);
-      localStorage.setItem('userId', response.user_id);
+      localStorage.setItem('userId', response.user.id);
       
       navigate('/chat');
       

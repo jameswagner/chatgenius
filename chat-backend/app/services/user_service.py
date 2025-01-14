@@ -11,8 +11,19 @@ from typing import Optional, List, Dict, Set
 from boto3.dynamodb.conditions import Key, Attr
 from app.models.user import User
 from .base_service import BaseService
+import boto3
+import os
 
 class UserService(BaseService):
+    def __init__(self, table_name: str = None):
+        super().__init__(table_name)
+        self.dynamodb = boto3.resource(
+            'dynamodb',
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+            region_name=os.getenv('AWS_REGION')
+        )
+
     def create_user(self, email: str, name: str, password: str = None, type: str = 'user', role: str = None, bio: str = None, id: str = None) -> User:
         """Create a new user
         

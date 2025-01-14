@@ -42,7 +42,7 @@ export const api = {
     login: async (email: string, password: string): Promise<AuthResponse> => {
       try {
         const response = await client.post('/auth/login', { email, password });
-        if (!response.data.token || !response.data.user_id) {
+        if (!response.data.token || !response.data.user.id) {
           throw new Error('Invalid server response');
         }
         return response.data;
@@ -256,6 +256,18 @@ client.interceptors.response.use(
       throw new ApiError(error.response.status, error.response.data.error);
     }
     throw error;
+  }
+);
+
+// Add a response interceptor to log responses
+client.interceptors.response.use(
+  response => {
+    console.log('API Response:', response);
+    return response;
+  },
+  error => {
+    console.error('API Error:', error);
+    return Promise.reject(error);
   }
 );
 

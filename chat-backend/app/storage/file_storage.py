@@ -6,7 +6,12 @@ from werkzeug.utils import secure_filename
 class FileStorage:
     def __init__(self):
         print("\n=== Initializing FileStorage ===")
-        self.s3 = boto3.client('s3')
+        self.s3 = boto3.client(
+            's3',
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+            region_name=os.getenv('AWS_REGION')
+        )
         self.bucket_name = os.environ.get('S3_BUCKET_NAME', 'chatgenius-jrw')
         print(f"Using bucket: {self.bucket_name}")
 

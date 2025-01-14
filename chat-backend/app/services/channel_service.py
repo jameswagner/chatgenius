@@ -1,3 +1,24 @@
+"""Channel service for managing channels in DynamoDB
+
+Schema for Channels:
+    PK=CHANNEL#{id} SK=#METADATA  # Primary key for channel metadata
+    GSI1PK=TYPE#{type}#NAME#{name} GSI1SK=#METADATA  # For looking up channels by type and name
+    GSI2PK=USER#{user_id} GSI2SK=CHANNEL#{channel_id}  # For user-channel memberships
+    GSI3PK=CHANNEL#{channel_id} GSI3SK=MESSAGE#{timestamp}  # For retrieving messages in a channel
+    GSI4PK=WORKSPACE#{workspace_id} GSI4SK=CHANNEL#{channel_id}  # For workspace channel membership
+
+Key Usage:
+- Primary key (PK/SK): Stores channel metadata and properties
+- GSI1: Used to look up channels by type (public/private/dm) and name
+- GSI2: Maps users to channels they are members of, enabling efficient channel membership lookups
+- GSI3: Enables chronological retrieval of messages within a channel
+- GSI4: Enables efficient lookup of channels within a workspace
+
+Channel Members:
+    PK=CHANNEL#{channel_id} SK=MEMBER#{user_id}  # Primary key for channel membership
+    GSI2PK=USER#{user_id} GSI2SK=CHANNEL#{channel_id}  # For user's channel memberships
+"""
+
 from typing import Optional, List, Dict
 from datetime import datetime, timezone
 import uuid
@@ -21,8 +42,16 @@ class ChannelService(BaseService):
             cleaned.pop('type')
         return cleaned
 
-    def create_channel(self, name: str, type: str = 'public', created_by: str = None, other_user_id: str = None) -> Channel:
-        """Create a new channel."""
+    def create_channel(self, name: str, type: str = 'public', created_by: str = None, other_user_id: str = None, workspace_id: str = "NO_WORKSPACE") -> Channel:
+        """Create a new channel.
+        
+        Args:
+            name: Channel name
+            type: Channel type (public/private/dm)
+            created_by: User ID of creator
+            other_user_id: For DM channels, the other user's ID
+            workspace_id: Workspace ID to assign channel to (defaults to NO_WORKSPACE)
+        """
         channel_id = self._generate_id()
         timestamp = self._now()
         
@@ -50,11 +79,14 @@ class ChannelService(BaseService):
             'SK': '#METADATA',
             'GSI1PK': f'TYPE#{type}',
             'GSI1SK': f'NAME#{name}',
+            'GSI4PK': f'WORKSPACE#{workspace_id}',
+            'GSI4SK': f'CHANNEL#{channel_id}',
             'id': channel_id,
             'name': name,
             'type': type,
             'created_by': created_by,
             'created_at': timestamp,
+            'workspace_id': workspace_id,
             'members': []
         }
         
@@ -338,3 +370,130 @@ class ChannelService(BaseService):
             }
         )
         return 'Item' in response 
+
+    def get_channel_by_name(self, name: str) -> Optional[Channel]:
+        """Get a channel by its name.
+        
+        Args:
+            name: The name of the channel to retrieve
+            
+        Returns:
+            Channel object if found, None otherwise
+        """
+        try:
+            # Query GSI1 using TYPE#public and NAME#{name}
+            response = self.table.query(
+                IndexName='GSI1',
+                KeyConditionExpression=Key('GSI1PK').eq('TYPE#public') & Key('GSI1SK').eq(f'NAME#{name}'),
+                Limit=1
+            )
+            
+            if not response['Items']:
+                return None
+            
+            item = response['Items'][0]
+            return Channel(
+                id=item['id'],
+                name=item['name'],
+                type=item['type'],
+                created_by=item['created_by'],
+                created_at=item['created_at']
+            )
+        except Exception as e:
+            print(f"Error getting channel by name: {e}")
+            return None 
+
+    def get_workspace_channels(self, workspace_id: str) -> List[Channel]:
+        """Get all channels in a workspace.
+        
+        Args:
+            workspace_id: The ID of the workspace
+            
+        Returns:
+            List of channels in the workspace
+        """
+        response = self.table.query(
+            IndexName='GSI4',
+            KeyConditionExpression=Key('GSI4PK').eq(f'WORKSPACE#{workspace_id}') & 
+                                 Key('GSI4SK').begins_with('CHANNEL#')
+        )
+        
+        channels = []
+        for item in response['Items']:
+            channel_data = self._clean_item(item)
+            channels.append(Channel(**channel_data))
+                
+        return channels
+
+    def add_channel_to_workspace(self, channel_id: str, workspace_id: str) -> None:
+        """Add a channel to a workspace.
+        
+        Args:
+            channel_id: The ID of the channel
+            workspace_id: The ID of the workspace
+        """
+        # First check if channel exists
+        channel = self.get_channel_by_id(channel_id)
+        if not channel:
+            raise ValueError("Channel not found")
+            
+        # Add workspace GSI4
+        self.table.update_item(
+            Key={
+                'PK': f'CHANNEL#{channel_id}',
+                'SK': '#METADATA'
+            },
+            UpdateExpression='SET GSI4PK = :workspace_pk, GSI4SK = :channel_sk',
+            ExpressionAttributeValues={
+                ':workspace_pk': f'WORKSPACE#{workspace_id}',
+                ':channel_sk': f'CHANNEL#{channel_id}'
+            }
+        ) 
+
+    def find_channels_without_workspace(self) -> List[Channel]:
+        """Find all channels that don't have a workspace assigned and assign them to NO_WORKSPACE.
+        
+        Returns:
+            List of channels that were updated with NO_WORKSPACE
+        """
+        # Query all channels using GSI1 for public and private channels
+        channels = []
+        for channel_type in ['public', 'private']:
+            response = self.table.query(
+                IndexName='GSI1',
+                KeyConditionExpression=Key('GSI1PK').eq(f'TYPE#{channel_type}')
+            )
+            
+            for item in response['Items']:
+                if item['SK'] == '#METADATA' and (
+                    'workspace_id' not in item or 
+                    not item.get('workspace_id', '').strip()  # Handle both missing and empty workspace_id
+                ):
+                    # Update channel with NO_WORKSPACE
+                    try:
+                        self.table.update_item(
+                            Key={
+                                'PK': item['PK'],
+                                'SK': '#METADATA'
+                            },
+                            UpdateExpression='SET workspace_id = :wid, GSI4PK = :wpk, GSI4SK = :csk',
+                            ExpressionAttributeValues={
+                                ':wid': 'NO_WORKSPACE',
+                                ':wpk': 'WORKSPACE#NO_WORKSPACE',
+                                ':csk': f'CHANNEL#{item["id"]}'
+                            }
+                        )
+                        channels.append(Channel(**self._clean_item(item)))
+                    except Exception as e:
+                        logging.error(f"Error updating channel {item['id']}: {str(e)}")
+                        
+        return channels
+
+    def assign_default_workspace_to_channels(self) -> int:
+        """Find all channels without workspace and assign them to NO_WORKSPACE.
+        This is now handled directly in find_channels_without_workspace.
+        
+        Returns:
+            Number of channels updated
+        """
+        return len(self.find_channels_without_workspace()) 

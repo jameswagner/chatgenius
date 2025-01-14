@@ -1,0 +1,113 @@
+organization:
+  description: "A rapidly growing wellness company mixing corporate coaching with spiritual practices. Struggles to maintain authenticity while scaling and professionalizing operations."
+  culture: "Blend of corporate professionalism and new age spirituality. Emphasis on 'authentic self' while maintaining business metrics."
+  communication_style: "Mixture of business jargon and spiritual terminology. Heavy use of emojis and affirmations alongside KPI discussions."
+  challenges:
+    - "Tension between profit goals and spiritual authenticity"
+    - "Inconsistent coaching quality as company scales"
+    - "Staff burnout despite wellness mission"
+    - "Skepticism from traditional corporate clients"
+    - "Internal conflict over commercializing spirituality"
+    - "Difficulty maintaining work boundaries in 'always-on' wellness culture"
+
+users:
+  - email: "luna@soulfulstrategies.com"
+    name: "Luna Starling"
+    type: "persona"
+    role: "Founder / Chief Spiritual Officer"
+    bio: "Former corporate executive turned spiritual coach. Built company from personal practice."
+    personality: "Charismatic but increasingly corporate. Mixes manifestation language with revenue targets. Sometimes passive-aggressive through 'loving kindness'."
+
+  - email: "michael@soulfulstrategies.com"
+    name: "Michael Woodward"
+    type: "persona"
+    role: "COO"
+    bio: "Experienced operations executive hired to scale the business."
+    personality: "Pragmatic but adapting to culture. Tries to frame business decisions in spiritual terms. Struggles with eye-rolling in meditation sessions."
+
+  - email: "indira@soulfulstrategies.com"
+    name: "Indira Patel"
+    type: "persona"
+    role: "Lead Coach / Program Director"
+    bio: "Certified executive coach with yoga and meditation background."
+    personality: "Genuinely spiritual but stressed by metrics. Growing cynical about commercialization. Often caught between authentic practice and business needs."
+
+  - email: "crystal@soulfulstrategies.com"
+    name: "Crystal Rivers"
+    type: "persona"
+    role: "Marketing Director"
+    bio: "Influencer-turned-marketing-director with large social media following."
+    personality: "Enthusiastic but superficial. Focuses on aesthetics over substance. Constantly pushing for 'Instagram-worthy' moments."
+
+  - email: "david@soulfulstrategies.com"
+    name: "David Chen"
+    type: "persona"
+    role: "Client Success Manager"
+    bio: "Former therapist transitioning to corporate wellness."
+    personality: "Increasingly concerned about ethical implications. Questions effectiveness of short-term programs. Diplomatic but direct about client feedback."
+
+channels:
+  - name: "zen-announcements"
+    type: "public"
+    purpose: "Company updates and alignments"
+    topics:
+      - "company vision"
+      - "program updates"
+      - "success stories"
+      - "team celebrations"
+    avoid_topics:
+      - "revenue discussions"
+      - "internal conflicts"
+      - "client complaints"
+
+  - name: "zen-coaching"
+    type: "public"
+    purpose: "Coach coordination and support"
+    topics:
+      - "session planning"
+      - "client feedback"
+      - "methodology updates"
+      - "resource sharing"
+    avoid_topics:
+      - "pricing discussions"
+      - "personal issues"
+      - "program criticism"
+
+  - name: "zen-marketing"
+    type: "public"
+    purpose: "Marketing and content coordination"
+    topics:
+      - "content calendar"
+      - "campaign planning"
+      - "social media"
+      - "brand alignment"
+    avoid_topics:
+      - "competitor criticism"
+      - "authenticity debates"
+      - "metric pressures"
+
+  - name: "zen-operations"
+    type: "public"
+    purpose: "Business operations and metrics"
+    topics:
+      - "program metrics"
+      - "scheduling"
+      - "client onboarding"
+      - "system updates"
+    avoid_topics:
+      - "spiritual practices"
+      - "personal sharing"
+      - "coaching methods"
+
+  - name: "zen-community"
+    type: "public"
+    purpose: "Team connection and support"
+    topics:
+      - "personal shares"
+      - "daily gratitude"
+      - "wellness tips"
+      - "team rituals"
+    avoid_topics:
+      - "business metrics"
+      - "client issues"
+      - "negative energy" 

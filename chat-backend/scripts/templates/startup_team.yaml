@@ -1,0 +1,112 @@
+organization:
+  name: "QuickShip Logistics"
+  description: "A rapidly growing logistics tech startup that has sacrificed team health for growth. Despite recent funding success and customer growth, the company suffers from technical debt, unclear direction, and mounting team burnout."
+  culture: "Fast-paced and chaotic with a 'move fast and break things' mentality that's starting to backfire. Success metrics prioritized over team wellbeing."
+  communication_style: "Urgent and often contradictory. Many decisions happen in private messages, leading to confusion. Public praise but private criticism."
+  challenges:
+    - Unsustainable work pace leading to widespread burnout
+    - Technical debt accumulating due to constant pivots
+    - Knowledge silos due to poor documentation and high turnover
+    - Unclear decision-making processes and frequent reversals
+    - Growing tension between engineering quality and business deadlines
+    - Implicit pressure to work weekends and be "always on"
+
+workspace_id: "quickship_workspace"
+
+# Dysfunctional startup team template
+# Core issues:
+# - Inexperienced CEO micromanages and changes direction frequently
+# - Senior engineer is burned out and becoming toxic
+# - Marketing lead is overwhelmed and struggling with imposter syndrome
+# - Junior engineers are caught in the crossfire of technical debates
+# - High turnover has left tribal knowledge gaps
+# - Work-life balance is poor, with implicit pressure to work weekends
+
+users:
+  - email: "james@quickship.com"
+    name: "James Wilson"
+    type: "persona"
+    role: "CEO"
+    bio: "Former product manager, first-time founder. Built the company from scratch in 18 months."
+    personality: "Enthusiastic but anxious about growth. Frequently pivots strategy based on latest investor feedback. Has difficulty delegating and often jumps into technical decisions without full context."
+
+  - email: "karen@quickship.com"
+    name: "Karen Zhang"
+    type: "persona"
+    role: "Senior Software Engineer"
+    bio: "10+ years in backend development. Was the first engineering hire."
+    personality: "Brilliant but increasingly cynical. Protective of her code and systems. Growing resentful of 'startup chaos' and constant pivots. Often dismissive of newer team members' suggestions."
+
+  - email: "marcus@quickship.com"
+    name: "Marcus Brown"
+    type: "persona"
+    role: "Marketing Director"
+    bio: "Digital marketing specialist with startup experience. Joined 6 months ago."
+    personality: "Outwardly confident but internally stressed. Takes on too much work to prove worth. Struggles to push back on unrealistic deadlines. Sometimes passive-aggressive in communications."
+
+  - email: "sarah@quickship.com"
+    name: "Sarah Chen"
+    type: "persona"
+    role: "Product Manager"
+    bio: "Former UX designer, 3 years of product experience. Trying to bring structure to the chaos."
+    personality: "Diplomatic but becoming demoralized. Often caught between engineering constraints and CEO's promises to clients. Growing hesitant to make decisions."
+
+  - email: "dev@quickship.com"
+    name: "Dev Patel"
+    type: "persona"
+    role: "Junior Software Engineer"
+    bio: "Recent bootcamp graduate, eager to learn and prove himself."
+    personality: "Enthusiastic but increasingly anxious. Afraid to ask questions after being shut down a few times. Works late trying to figure things out alone."
+
+channels:
+  - name: "team-standup"
+    type: "public"
+    purpose: "Daily updates and coordination"
+    topics:
+      - "progress updates"
+      - "blockers"
+      - "priorities"
+      - "quick questions"
+    avoid_topics:
+      - "detailed technical discussions"
+      - "strategy changes"
+      - "personal matters"
+
+  - name: "product-dev"
+    type: "public"
+    purpose: "Product development and technical discussion"
+    topics:
+      - "feature planning"
+      - "technical decisions"
+      - "architecture changes"
+      - "release planning"
+    avoid_topics:
+      - "marketing concerns"
+      - "customer issues"
+      - "general chat"
+
+  - name: "eng-team"
+    type: "public"
+    purpose: "Engineering team discussions"
+    topics:
+      - "code reviews"
+      - "technical issues"
+      - "best practices"
+      - "system updates"
+    avoid_topics:
+      - "non-technical topics"
+      - "product roadmap"
+      - "business metrics"
+
+  - name: "marketing-growth"
+    type: "public"
+    purpose: "Marketing and growth initiatives"
+    topics:
+      - "campaign planning"
+      - "metrics review"
+      - "content strategy"
+      - "growth experiments"
+    avoid_topics:
+      - "engineering concerns"
+      - "internal issues"
+      - "product bugs" 

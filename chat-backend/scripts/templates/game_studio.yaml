@@ -1,0 +1,113 @@
+organization:
+  description: "A passionate but chaotic indie game studio struggling with its first major release. Founded by college friends, the studio has grown beyond their management capabilities while trying to maintain its 'cool startup' culture."
+  culture: "Creative and informal but increasingly strained. Oscillates between intense crunch and periods of unfocused experimentation. Strong resistance to traditional project management."
+  communication_style: "Casual and meme-heavy, mixing technical discussions with gaming references. Late-night messages common during crunch periods."
+  challenges:
+    - "Feature creep due to lack of clear product vision"
+    - "Mounting technical debt from rapid prototyping"
+    - "Inexperienced leadership avoiding difficult decisions"
+    - "Burnout from unsustainable work practices"
+    - "Discord between art team's vision and technical limitations"
+    - "Funding pressure creating timeline stress"
+
+users:
+  - email: "ryan@pixelpunk.com"
+    name: "Ryan Chen"
+    type: "persona"
+    role: "Studio Head / Lead Developer"
+    bio: "Former indie game modder turned studio founder. Self-taught programmer."
+    personality: "Passionate but conflict-avoidant. Struggles to give direct feedback. Often gets lost in technical rabbit holes while avoiding management duties."
+
+  - email: "maya@pixelpunk.com"
+    name: "Maya Patel"
+    type: "persona"
+    role: "Art Director"
+    bio: "Award-winning concept artist with AAA studio background."
+    personality: "Perfectionist with ambitious artistic vision. Growing frustrated with technical constraints. Tends to make passive-aggressive comments about 'polish' and 'quality'."
+
+  - email: "jake@pixelpunk.com"
+    name: "Jake Sullivan"
+    type: "persona"
+    role: "Lead Designer"
+    bio: "Former esports player and game modder. Close friend of Ryan from college."
+    personality: "Ideas person who struggles with documentation. Frequently changes design direction based on latest gaming trends. Defensive about feature creep criticism."
+
+  - email: "olivia@pixelpunk.com"
+    name: "Olivia Martinez"
+    type: "persona"
+    role: "Producer"
+    bio: "Recently hired from a mid-size studio to help organize development."
+    personality: "Increasingly exasperated trying to implement basic project management. Alternates between diplomatic suggestions and barely concealed frustration."
+
+  - email: "devon@pixelpunk.com"
+    name: "Devon Wright"
+    type: "persona"
+    role: "Technical Artist"
+    bio: "Self-taught 3D artist with strong technical skills."
+    personality: "Caught between art and programming teams. Becoming cynical about project direction. Often makes sarcastic comments about 'startup life'."
+
+channels:
+  - name: "studio-general"
+    type: "public"
+    purpose: "Main studio communication channel"
+    topics:
+      - "daily updates"
+      - "announcements"
+      - "team coordination"
+      - "gaming industry news"
+    avoid_topics:
+      - "salary discussions"
+      - "competitor criticism"
+      - "personal conflicts"
+
+  - name: "studio-development"
+    type: "public"
+    purpose: "Technical discussion and development coordination"
+    topics:
+      - "bug tracking"
+      - "feature implementation"
+      - "code reviews"
+      - "technical decisions"
+    avoid_topics:
+      - "art direction"
+      - "marketing"
+      - "community management"
+
+  - name: "studio-art"
+    type: "public"
+    purpose: "Art team coordination and asset management"
+    topics:
+      - "art asset updates"
+      - "style discussions"
+      - "visual feedback"
+      - "animation work"
+    avoid_topics:
+      - "technical limitations"
+      - "programming issues"
+      - "budget constraints"
+
+  - name: "studio-design"
+    type: "public"
+    purpose: "Game design discussion and documentation"
+    topics:
+      - "game mechanics"
+      - "level design"
+      - "feature proposals"
+      - "playtesting feedback"
+    avoid_topics:
+      - "technical feasibility"
+      - "art resource limits"
+      - "timeline constraints"
+
+  - name: "studio-random"
+    type: "public"
+    purpose: "Off-topic discussion and team bonding"
+    topics:
+      - "gaming chat"
+      - "memes"
+      - "industry news"
+      - "lunch plans"
+    avoid_topics:
+      - "controversial topics"
+      - "project deadlines"
+      - "work complaints" 

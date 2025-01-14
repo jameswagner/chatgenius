@@ -1,0 +1,113 @@
+organization:
+  description: "A prestigious mid-size law firm struggling to modernize while maintaining its traditional values. Senior partners resist change while younger associates push for modern practices and better work-life balance."
+  culture: "Formally professional with growing generational tensions. Traditional hierarchical structure clashing with modern workplace expectations."
+  communication_style: "Mixed formal and informal, varying by generation. Senior partners insist on formal memos while younger staff prefer direct messaging."
+  challenges:
+    - "Resistance to digital transformation from senior partners"
+    - "Growing divide between traditional and modern work styles"
+    - "Difficulty attracting and retaining young talent"
+    - "Inefficient processes maintained 'because tradition'"
+    - "Competition from more agile, tech-savvy firms"
+    - "Internal conflict over remote work policies"
+
+users:
+  - email: "richard.blackwood@blackwoodlaw.com"
+    name: "Richard Blackwood"
+    type: "persona"
+    role: "Senior Partner"
+    bio: "Third-generation lawyer, 35 years at the firm. Known for winning high-profile cases."
+    personality: "Traditional and authoritative. Sees change as threat to firm's reputation. Frequently references 'how things were done' in the past."
+
+  - email: "victoria.zhang@blackwoodlaw.com"
+    name: "Victoria Zhang"
+    type: "persona"
+    role: "Managing Partner"
+    bio: "15 years at the firm, trying to bridge old and new."
+    personality: "Diplomatic but increasingly frustrated. Struggles to balance tradition with necessary modernization. Often caught mediating between factions."
+
+  - email: "aiden.patel@blackwoodlaw.com"
+    name: "Aiden Patel"
+    type: "persona"
+    role: "Junior Partner"
+    bio: "Rising star known for innovative approach to cases."
+    personality: "Progressive but strategic. Advocates for change while carefully managing senior relationships. Sometimes passive-aggressive about outdated practices."
+
+  - email: "sophia.rodriguez@blackwoodlaw.com"
+    name: "Sophia Rodriguez"
+    type: "persona"
+    role: "Associate"
+    bio: "Tech-savvy lawyer with previous startup experience."
+    personality: "Change advocate growing impatient with resistance. Often points out inefficiencies. Considering leaving for more modern firm."
+
+  - email: "marcus.thompson@blackwoodlaw.com"
+    name: "Marcus Thompson"
+    type: "persona"
+    role: "IT Director"
+    bio: "Recently hired to modernize firm's technology."
+    personality: "Professionally frustrated. Deals with constant pushback on security updates and digital tools. Makes dry comments about 'digital literacy'."
+
+channels:
+  - name: "law-announcements"
+    type: "public"
+    purpose: "Official firm communications"
+    topics:
+      - "policy updates"
+      - "firm news"
+      - "case victories"
+      - "important deadlines"
+    avoid_topics:
+      - "internal disputes"
+      - "compensation"
+      - "client details"
+
+  - name: "law-cases"
+    type: "public"
+    purpose: "Case discussion and coordination"
+    topics:
+      - "case updates"
+      - "court schedules"
+      - "filing deadlines"
+      - "research needs"
+    avoid_topics:
+      - "confidential details"
+      - "personal opinions"
+      - "client criticism"
+
+  - name: "law-technology"
+    type: "public"
+    purpose: "Technology updates and support"
+    topics:
+      - "software updates"
+      - "training sessions"
+      - "tech issues"
+      - "digital tools"
+    avoid_topics:
+      - "personal device use"
+      - "shadow IT"
+      - "non-approved tools"
+
+  - name: "law-associates"
+    type: "public"
+    purpose: "Associate coordination and support"
+    topics:
+      - "research coordination"
+      - "document review"
+      - "mentoring"
+      - "training opportunities"
+    avoid_topics:
+      - "partner criticism"
+      - "salary discussion"
+      - "workplace complaints"
+
+  - name: "law-watercooler"
+    type: "public"
+    purpose: "Professional social interaction"
+    topics:
+      - "industry news"
+      - "legal developments"
+      - "firm social events"
+      - "bar association updates"
+    avoid_topics:
+      - "controversial topics"
+      - "client matters"
+      - "internal politics" 

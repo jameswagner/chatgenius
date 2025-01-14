@@ -5,6 +5,7 @@ import time
 import pytest
 import requests
 import threading
+from selenium.webdriver.common.keys import Keys
 
 TEST_USER_1 = {"name": "Test User One", "email": "test1@example.com", "password": "password123"}
 TEST_USER_2 = {"name": "Test User Two", "email": "test2@example.com", "password": "password123"}
@@ -266,5 +267,141 @@ def test_direct_messages(driver, second_driver, test_db, test_users):
     )
     
     print("\n=== Direct messages test completed successfully ===")
+
+def test_thread_replies(driver, second_driver, test_db, test_users):
+    """Test replying in threads and adding reactions to replies"""
+    print("\n=== Starting thread replies test ===")
+    
+    setup_two_users(driver, second_driver)
+    
+    # First user sends a message in general channel
+    message_text = "Main message for thread testing"
+    send_and_verify_message(driver, second_driver, message_text)
+    
+    # Wait for the message to be visible and find its container
+    message_element = WebDriverWait(second_driver, 30).until(
+        EC.presence_of_element_located((By.XPATH, f"//p[contains(text(), '{message_text}')]"))
+    )
+    
+    # Debug - Print the HTML structure
+    print("\nDebug - Message element HTML:")
+    print(message_element.get_attribute('outerHTML'))
+    print("\nDebug - Parent element HTML:")
+    parent = message_element.find_element(By.XPATH, "..")
+    print(parent.get_attribute('outerHTML'))
+    print("\nDebug - Grandparent element HTML:")
+    grandparent = parent.find_element(By.XPATH, "..")
+    print(grandparent.get_attribute('outerHTML'))
+
+    # Find the message container and get its ID
+    message_container = message_element.find_element(By.XPATH, "ancestor::div[contains(@class, 'flex items-start p-2')]")
+    message_id = message_container.get_attribute("id")
+    print(f"\nDebug - Message container HTML:")
+    print(message_container.get_attribute('outerHTML'))
+    print(f"\nDebug - Message container ID: {message_id}")
+    
+    if message_id:
+        message_id = message_id.replace("message-", "")
+        print(f"Debug - Looking for button with data-testid: reply-in-thread-button-{message_id}")
+
+        # Find the reply button directly by its data-testid
+        reply_button = WebDriverWait(second_driver, 30).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, f"button[data-testid='reply-in-thread-button-{message_id}']"))
+        )
+        print("Debug - Reply button found successfully")
+        reply_button.click()
+    else:
+        print("Debug - No message ID found in container")
+    
+    # Send reply in thread
+    reply_input = WebDriverWait(second_driver, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='thread-reply-input']"))
+    )
+    reply_input.send_keys("This is a thread reply!")
+    reply_input.send_keys(Keys.RETURN)
+    
+    # Verify reply appears for both users
+    for driver in [driver, second_driver]:
+        # Verify reply count shows "1 reply"
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, "//span[contains(text(), '1 reply')]"))
+        )
+        
+        # Click to show replies if needed
+        show_replies = driver.find_element(By.CSS_SELECTOR, f"[data-testid='show-replies-button-{message_id}']")
+        show_replies.click()
+        
+        # Verify reply content
+        reply_text = "This is a thread reply!"
+        print(f"\nDebug - Looking for reply with text: {reply_text}")
+        reply = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, f"//p[contains(text(), '{reply_text}')]"))
+        )
+        print("Debug - Found reply message")
+        print("Debug - Reply HTML:")
+        print(reply.get_attribute('outerHTML'))
+
+        # Get the reply container by finding the closest message container div
+        reply_container = reply.find_element(By.XPATH, "ancestor::div[@id[starts-with(., 'message-')]]")
+        print("\nDebug - Reply container HTML:")
+        print(reply_container.get_attribute('outerHTML'))
+
+        reply_id = reply_container.get_attribute("id").replace("message-", "")
+        print(f"\nDebug - Reply ID: {reply_id}")
+
+        # Find and click the add reaction button for the reply
+        add_reaction_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, f"[data-testid='add-reaction-{reply_id}']"))
+        )
+        add_reaction_button.click()
+    
+    # First user adds reaction to the reply
+    print("\nDebug - First user adding reaction")
+    print("Debug - Looking for add reaction button")
+    add_reaction_button = WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, f"[data-testid='add-reaction-{reply_id}']"))
+    )
+    print("Debug - Found add reaction button")
+    print("Debug - Add reaction button HTML:")
+    print(add_reaction_button.get_attribute('outerHTML'))
+    add_reaction_button.click()
+    
+    # Wait for emoji picker and add reaction
+    WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid^='emoji-picker-']"))
+    )
+    driver.execute_script("""
+        const picker = document.querySelector('em-emoji-picker');
+        const thumbsUp = picker.shadowRoot.querySelector('button[aria-label="👍"]');
+        thumbsUp.click();
+    """)
+    
+    # Second user adds the same reaction to the reply
+    reply = WebDriverWait(second_driver, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='thread-reply']"))
+    )
+    add_reaction_button = reply.find_element(By.CSS_SELECTOR, "[data-testid^='add-reaction-']")
+    add_reaction_button.click()
+    
+    WebDriverWait(second_driver, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid^='emoji-picker-']"))
+    )
+    second_driver.execute_script("""
+        const picker = document.querySelector('em-emoji-picker');
+        const thumbsUp = picker.shadowRoot.querySelector('button[aria-label="👍"]');
+        thumbsUp.click();
+    """)
+    
+    # Verify reaction count for both users
+    for d in [driver, second_driver]:
+        reply = WebDriverWait(d, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='thread-reply']"))
+        )
+        reaction = reply.find_element(By.CSS_SELECTOR, "[data-testid^='reaction-👍-']")
+        WebDriverWait(d, 10).until(
+            lambda x: "2" in reaction.text
+        )
+    
+    print("\n=== Thread replies test completed successfully ===")
 
         

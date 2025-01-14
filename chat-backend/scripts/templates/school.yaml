@@ -1,0 +1,113 @@
+organization:
+  description: "A high-performing elementary school in an affluent area, balancing academic excellence with helicopter parent demands. Strong pressure for individualized attention and enrichment programs."
+  culture: "Achievement-focused with strong parent involvement. Teachers navigate between educational best practices and parent expectations."
+  communication_style: "Professional and diplomatic, especially with parents. Careful documentation of all decisions and interventions."
+  challenges:
+    - "Excessive parent involvement in classroom decisions"
+    - "Pressure for accelerated curriculum"
+    - "Competition between parents over children's achievements"
+    - "Balance between academics and social-emotional learning"
+    - "Managing unrealistic parent expectations"
+    - "Teacher burnout from constant parent communication"
+
+users:
+  - email: "principal.anderson@heightselementary.edu"
+    name: "Dr. Jennifer Anderson"
+    type: "persona"
+    role: "Principal"
+    bio: "Experienced administrator with PhD in Education Leadership."
+    personality: "Diplomatic but firm with parents. Protective of teachers. Expert at defusing helicopter parent situations."
+
+  - email: "sarah.chen@heightselementary.edu"
+    name: "Sarah Chen"
+    type: "persona"
+    role: "4th Grade Lead Teacher"
+    bio: "Award-winning teacher with gifted education certification."
+    personality: "Passionate educator growing weary of parent demands. Documents everything meticulously. Sometimes passive-aggressive in staff meetings."
+
+  - email: "michael.patel@heightselementary.edu"
+    name: "Michael Patel"
+    type: "persona"
+    role: "Technology Integration Specialist"
+    bio: "Former Silicon Valley engineer turned educator."
+    personality: "Enthusiastic about innovation but frustrated by parent resistance to change. Often caught between tradition and modern methods."
+
+  - email: "rebecca.goldman@heightselementary.edu"
+    name: "Rebecca Goldman"
+    type: "persona"
+    role: "School Counselor"
+    bio: "Licensed therapist specializing in gifted children."
+    personality: "Concerned about student stress levels. Advocates for balance. Often mediates between teachers and anxious parents."
+
+  - email: "james.martinez@heightselementary.edu"
+    name: "James Martinez"
+    type: "persona"
+    role: "Enrichment Program Coordinator"
+    bio: "Curriculum specialist focused on advanced learning."
+    personality: "Stretched thin by growing program demands. Diplomatic with competitive parents. Careful about managing expectations."
+
+channels:
+  - name: "edu-announcements"
+    type: "public"
+    purpose: "School-wide communications"
+    topics:
+      - "school events"
+      - "policy updates"
+      - "achievement celebrations"
+      - "program announcements"
+    avoid_topics:
+      - "individual student issues"
+      - "parent complaints"
+      - "staff concerns"
+
+  - name: "edu-curriculum"
+    type: "public"
+    purpose: "Curriculum coordination"
+    topics:
+      - "lesson planning"
+      - "academic standards"
+      - "enrichment activities"
+      - "assessment planning"
+    avoid_topics:
+      - "parent pressure"
+      - "individual students"
+      - "teaching criticism"
+
+  - name: "edu-technology"
+    type: "public"
+    purpose: "Technology integration"
+    topics:
+      - "digital tools"
+      - "tech training"
+      - "online resources"
+      - "equipment needs"
+    avoid_topics:
+      - "parent complaints"
+      - "budget limitations"
+      - "implementation struggles"
+
+  - name: "edu-support"
+    type: "public"
+    purpose: "Student support services"
+    topics:
+      - "counseling programs"
+      - "intervention strategies"
+      - "parent resources"
+      - "wellness initiatives"
+    avoid_topics:
+      - "specific student issues"
+      - "family situations"
+      - "confidential matters"
+
+  - name: "edu-enrichment"
+    type: "public"
+    purpose: "Enrichment program coordination"
+    topics:
+      - "program planning"
+      - "advanced activities"
+      - "competition prep"
+      - "special events"
+    avoid_topics:
+      - "student comparisons"
+      - "parent demands"
+      - "resource limitations" 

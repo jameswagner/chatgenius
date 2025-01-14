@@ -437,3 +437,177 @@ def test_mark_channel_read_permissions(ddb, user_service, message_service):
         assert False, "Should have raised ValueError"
     except ValueError as e:
         assert str(e) == "User is not a member" 
+
+def test_get_channel_by_name(ddb, user_service):
+    """Test retrieving a channel by name"""
+    # Create test user first
+    create_test_user(user_service, "test_user", "Test User")
+    
+    # Create a test channel
+    channel = ddb.create_channel(
+        name="test-channel",
+        type="public",
+        created_by="test_user"
+    )
+    
+    # Get channel by name
+    retrieved = ddb.get_channel_by_name("test-channel")
+    assert retrieved is not None
+    assert retrieved.id == channel.id
+    assert retrieved.name == "test-channel"
+    assert retrieved.type == "public"
+    
+    # Test non-existent channel
+    assert ddb.get_channel_by_name("nonexistent") is None
+
+def test_get_channel_by_name_private(ddb, user_service):
+    """Test retrieving a private channel by name"""
+    # Create test user first
+    create_test_user(user_service, "test_user", "Test User")
+    
+    # Create a private test channel
+    channel = ddb.create_channel(
+        name="private-channel",
+        type="private",
+        created_by="test_user"
+    )
+    
+    # Get channel by name should return None since we only query public channels
+    retrieved = ddb.get_channel_by_name("private-channel")
+    assert retrieved is None 
+
+def test_create_channel_with_workspace(ddb, user_service):
+    """Test creating a channel with a specific workspace."""
+    # Create test user
+    create_test_user(user_service, "user1", "Test User")
+    
+    # Create channel with workspace
+    channel = ddb.create_channel(
+        name="test-channel",
+        type="public",
+        created_by="user1",
+        workspace_id="workspace1"
+    )
+    
+    # Verify channel was created with workspace
+    assert channel.id is not None
+    assert channel.name == "test-channel"
+    assert channel.workspace_id == "workspace1"
+    
+    # Get channel to verify workspace was persisted
+    saved_channel = ddb.get_channel_by_id(channel.id)
+    assert saved_channel.workspace_id == "workspace1"
+
+def test_create_channel_default_workspace(ddb, user_service):
+    """Test creating a channel without specifying workspace."""
+    # Create test user
+    create_test_user(user_service, "user1", "Test User")
+    
+    # Create channel without workspace
+    channel = ddb.create_channel(
+        name="test-channel",
+        type="public",
+        created_by="user1"
+    )
+    
+    # Verify default workspace was used
+    assert channel.workspace_id == "NO_WORKSPACE"
+    
+    # Get channel to verify workspace was persisted
+    saved_channel = ddb.get_channel_by_id(channel.id)
+    assert saved_channel.workspace_id == "NO_WORKSPACE"
+
+def test_find_channels_without_workspace(ddb, user_service):
+    """Test finding and updating channels without workspace."""
+    # Create test user
+    create_test_user(user_service, "user1", "Test User")
+    
+    # Create channels with different workspace states
+    channels = [
+        # Channel without workspace (direct table write to simulate legacy data)
+        {
+            'PK': f'CHANNEL#no-workspace',
+            'SK': '#METADATA',
+            'GSI1PK': 'TYPE#public',
+            'GSI1SK': 'NAME#no-workspace',
+            'id': 'no-workspace',
+            'name': 'no-workspace',
+            'type': 'public',
+            'created_by': 'user1',
+            'created_at': ddb._now()
+        },
+        # Channel with workspace
+        ddb.create_channel(
+            name="with-workspace",
+            type="public",
+            created_by="user1",
+            workspace_id="workspace1"
+        ),
+        # Channel with empty workspace (direct table write)
+        {
+            'PK': f'CHANNEL#empty-workspace',
+            'SK': '#METADATA',
+            'GSI1PK': 'TYPE#private',
+            'GSI1SK': 'NAME#empty-workspace',
+            'id': 'empty-workspace',
+            'name': 'empty-workspace',
+            'type': 'private',
+            'created_by': 'user1',
+            'created_at': ddb._now(),
+            'workspace_id': ''
+        }
+    ]
+    
+    # Write the direct table items
+    ddb.table.put_item(Item=channels[0])
+    ddb.table.put_item(Item=channels[2])
+    
+    # Find and update channels without workspace
+    updated_channels = ddb.find_channels_without_workspace()
+    
+    # Verify correct channels were updated
+    assert len(updated_channels) == 2  # no-workspace and empty-workspace
+    updated_ids = {c.id for c in updated_channels}
+    assert 'no-workspace' in updated_ids  # no-workspace
+    assert 'empty-workspace' in updated_ids  # empty-workspace
+    
+    # Verify channels were updated with NO_WORKSPACE
+    for channel_id in updated_ids:
+        saved_channel = ddb.get_channel_by_id(channel_id)
+        assert saved_channel.workspace_id == "NO_WORKSPACE"
+
+def test_get_workspace_channels(ddb, user_service):
+    """Test getting all channels in a workspace."""
+    # Create test user
+    create_test_user(user_service, "user1", "Test User")
+    
+    workspace_id = "workspace1"
+    
+    # Create channels in workspace
+    workspace_channels = [
+        ddb.create_channel(
+            name=f"workspace-channel-{i}",
+            type="public",
+            created_by="user1",
+            workspace_id=workspace_id
+        )
+        for i in range(3)
+    ]
+    
+    # Create channel in different workspace
+    other_channel = ddb.create_channel(
+        name="other-workspace",
+        type="public",
+        created_by="user1",
+        workspace_id="workspace2"
+    )
+    
+    # Get channels in workspace
+    channels = ddb.get_workspace_channels(workspace_id)
+    
+    # Verify only workspace channels are returned
+    assert len(channels) == 3
+    channel_ids = {c.id for c in channels}
+    for channel in workspace_channels:
+        assert channel.id in channel_ids
+    assert other_channel.id not in channel_ids 

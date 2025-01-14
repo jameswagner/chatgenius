@@ -113,19 +113,11 @@ export const ChatLayout = () => {
       const handleNewMessage = (message: Message) => {
         console.log('\nNew message received:', {
           messageId: message.id,
+          threadId: message.threadId,
           channelId: message.channelId,
           userId: message.userId,
           content: message.content,
           createdAt: message.createdAt
-        });
-        console.log('Current state:', {
-          currentChannel,
-          currentUserId: localStorage.getItem('userId'),
-          channels: channels.map(c => ({
-            id: c.id,
-            name: c.name,
-            lastRead: c.lastRead
-          }))
         });
         
         // Cache user data
@@ -135,12 +127,26 @@ export const ChatLayout = () => {
 
         const currentUserId = localStorage.getItem('userId');
         const isOwnMessage = message.userId === currentUserId;
-        console.log('Message ownership:', { isOwnMessage, messageUserId: message.userId, currentUserId });
 
         // If this is for the current channel, add it to messages
         if (message.channelId === currentChannel) {
-          console.log('Message is for current channel, adding to messages');
-          setMessages(prev => [...prev, message]);
+          setMessages(prev => {
+            // If it's a reply, find the parent message and add to its replies
+            if (message.threadId) {
+              return prev.map(m => {
+                if (m.id === message.threadId) {
+                  return {
+                    ...m,
+                    replies: [...(m.replies || []), message]
+                  };
+                }
+                return m;
+              });
+            }
+            // If it's a parent message, add it to the array
+            return [...prev, message];
+          });
+
           // Only mark as read if it's our own message or we're viewing it
           if (isOwnMessage) {
             console.log('Own message, no need to mark as read');
@@ -156,13 +162,6 @@ export const ChatLayout = () => {
                       ? { ...channel, lastRead: new Date().toISOString() }
                       : channel
                   );
-                  console.log('Updated channels after marking as read:', 
-                    updatedChannels.map(c => ({
-                      id: c.id,
-                      name: c.name,
-                      lastRead: c.lastRead
-                    }))
-                  );
                   return updatedChannels;
                 });
               })
@@ -170,24 +169,14 @@ export const ChatLayout = () => {
           }
         } else if (!isOwnMessage) {
           // Only mark other channels as unread if the message is from someone else
-          console.log('Message is from another user in different channel, marking as unread');
           setChannels(prevChannels => {
             const updatedChannels = prevChannels.map(channel => 
               channel.id === message.channelId 
                 ? { ...channel, lastRead: undefined }
                 : channel
             );
-            console.log('Updated channels after marking as unread:', 
-              updatedChannels.map(c => ({
-                id: c.id,
-                name: c.name,
-                lastRead: c.lastRead
-              }))
-            );
             return updatedChannels;
           });
-        } else {
-          console.log('Own message in different channel, no unread update needed');
         }
       };
 

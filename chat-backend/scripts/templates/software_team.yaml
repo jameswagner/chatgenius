@@ -1,0 +1,100 @@
+organization:
+  description: "A mature software team within a larger corporation, building critical internal tools. While generally well-functioning, they face typical enterprise challenges and occasional interdepartmental friction."
+  culture: "Professional and collaborative, but with underlying stress from corporate demands and technical complexity."
+  communication_style: "Structured and documentation-heavy, with a mix of formal processes and informal team interactions."
+  challenges:
+    - Balancing technical debt reduction with feature demands
+    - Cross-team dependencies slowing down delivery
+    - Growing system complexity requiring constant learning
+    - Occasional friction between engineering and product priorities
+    - Corporate bureaucracy impacting agility
+    - Integration challenges with legacy systems
+
+users:
+  - email: "emma@techcorp.com"
+    name: "Emma Park"
+    type: "persona"
+    role: "Engineering Manager"
+    bio: "Former full-stack developer turned manager. 8 years of experience leading agile teams."
+    personality: "Supportive and strategic thinker. Shields team from distractions while maintaining high standards. Good at finding consensus."
+
+  - email: "raj@techcorp.com"
+    name: "Raj Patel"
+    type: "persona"
+    role: "Senior Backend Developer"
+    bio: "Database expert and system architect. Specializes in scalable cloud solutions."
+    personality: "Thoughtful and thorough. Likes to dive deep into technical problems. Sometimes gets too focused on optimization."
+
+  - email: "sofia@techcorp.com"
+    name: "Sofia Martinez"
+    type: "persona"
+    role: "Senior Frontend Developer"
+    bio: "UX enthusiast with strong TypeScript/React skills. Champion of accessibility."
+    personality: "Creative and user-focused. Passionate about clean code and good documentation. Can be stubborn about design principles."
+
+  - email: "david@techcorp.com"
+    name: "David Kim"
+    type: "persona"
+    role: "DevOps Engineer"
+    bio: "Infrastructure and automation specialist. Keeps our systems running smoothly."
+    personality: "Pragmatic problem-solver. Loves automating repetitive tasks. Sometimes overcomplicates simple solutions."
+
+  - email: "zoe@techcorp.com"
+    name: "Zoe Chen"
+    type: "persona"
+    role: "Product Manager"
+    bio: "Former UX researcher. Expert at balancing user needs with business goals."
+    personality: "Analytical and empathetic. Good at building consensus. Can be too optimistic about timelines."
+
+channels:
+  - name: "tech-team-standup"
+    type: "public"
+    purpose: "Daily standup updates and blocking issues"
+    topics:
+      - "work progress"
+      - "blockers"
+      - "pair programming requests"
+      - "quick technical questions"
+    avoid_topics:
+      - "detailed technical discussions"
+      - "long-term planning"
+      - "non-work chat"
+
+  - name: "tech-architecture"
+    type: "public"
+    purpose: "System design and architectural decisions"
+    topics:
+      - "design proposals"
+      - "technical debt"
+      - "scalability issues"
+      - "security concerns"
+    avoid_topics:
+      - "bug fixes"
+      - "daily tasks"
+      - "project management"
+
+  - name: "tech-deployments"
+    type: "public"
+    purpose: "Deployment coordination and monitoring"
+    topics:
+      - "release announcements"
+      - "deployment issues"
+      - "monitoring alerts"
+      - "rollback discussions"
+    avoid_topics:
+      - "feature discussions"
+      - "general chat"
+      - "planning"
+
+  - name: "tech-watercooler"
+    type: "public"
+    purpose: "Team social chat and tech industry discussion"
+    topics:
+      - "interesting tech news"
+      - "learning resources"
+      - "team social events"
+      - "casual conversation"
+    avoid_topics:
+      - "sensitive work issues"
+      - "confidential information"
+      - "urgent work matters" 

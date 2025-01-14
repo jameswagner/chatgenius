@@ -132,8 +132,15 @@ export const api = {
   // Message operations
   messages: {
     list: async (channelId: string): Promise<Message[]> => {
-      const response = await client.get(`/channels/${channelId}/messages`);
-      return snakeToCamel(response.data);
+      const response = await client.get(`/channels/${channelId}/messages`, {
+        params: {
+          limit: 1000  // Request up to 1000 messages
+        }
+      });
+      console.log('Raw message data from backend:', response.data);
+      const transformed = snakeToCamel(response.data);
+      console.log('Transformed message data:', transformed);
+      return transformed;
     },
 
     create: async (channelId: string, data: FormData): Promise<Message> => {
@@ -196,13 +203,20 @@ export const api = {
 
   // Reaction operations
   reactions: {
-    add: async (messageId: string, emoji: string): Promise<Reaction> => {
-      const response = await client.post(`/messages/${messageId}/reactions`, { emoji });
+    add: async (messageId: string, emoji: string, threadId?: string): Promise<Reaction> => {
+      const response = await client.post(
+        `/messages/${messageId}/reactions`, 
+        { emoji },
+        { params: threadId ? { thread_id: threadId } : undefined }
+      );
       return response.data;
     },
 
-    remove: async (messageId: string, emoji: string): Promise<void> => {
-      await client.delete(`/messages/${messageId}/reactions/${emoji}`);
+    remove: async (messageId: string, emoji: string, threadId?: string): Promise<void> => {
+      await client.delete(
+        `/messages/${messageId}/reactions/${emoji}`,
+        { params: threadId ? { thread_id: threadId } : undefined }
+      );
     },
   },
 

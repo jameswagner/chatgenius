@@ -1,19 +1,54 @@
+"""User service for managing users in DynamoDB
+
+Schema for Users:
+    PK=USER#{id} SK=#METADATA
+    GSI1PK=TYPE#{type} GSI1SK=NAME#{name}  # For listing users by type
+    GSI2PK=EMAIL#{email} GSI2SK=#METADATA  # For email uniqueness and lookup
+    GSI4PK=NAME#{name} GSI4SK=#METADATA  # For username uniqueness and lookup
+"""
+
 from typing import Optional, List, Dict, Set
 from boto3.dynamodb.conditions import Key, Attr
 from app.models.user import User
 from .base_service import BaseService
 
 class UserService(BaseService):
-    def create_user(self, email: str, name: str, password: str, type: str = 'user', id: str = None) -> User:
-        """Create a new user"""
-        # Check if user exists using GSI2
+    def create_user(self, email: str, name: str, password: str = None, type: str = 'user', role: str = None, bio: str = None, id: str = None) -> User:
+        """Create a new user
+        
+        Args:
+            email: User's email address
+            name: User's display name
+            password: User's password (optional for persona users)
+            type: User type ('user' or 'persona')
+            role: User's role (for persona users)
+            bio: User's bio (for persona users)
+            id: Optional user ID
+        """
+        # Check if user exists using GSI2 (email)
         response = self.table.query(
             IndexName='GSI2',
             KeyConditionExpression=Key('GSI2PK').eq(f'EMAIL#{email}')
         )
         if response['Items']:
-            raise ValueError("User already exists")
+            raise ValueError("User already exists with this email")
             
+        # Check if username is taken using GSI4
+        response = self.table.query(
+            IndexName='GSI4',
+            KeyConditionExpression=Key('GSI4PK').eq(f'NAME#{name}')
+        )
+        if response['Items']:
+            raise ValueError("Username is already taken")
+            
+        # Validate persona fields
+        if type == 'persona':
+            if not role:
+                raise ValueError("Role is required for persona users")
+            if password:
+                print("Warning: Password provided for persona user will be ignored")
+                password = None
+        
         user_id = id or self._generate_id()
         timestamp = self._now()
         
@@ -24,6 +59,8 @@ class UserService(BaseService):
             'GSI1SK': f'NAME#{name}',
             'GSI2PK': f'EMAIL#{email}',
             'GSI2SK': '#METADATA',
+            'GSI4PK': f'NAME#{name}',
+            'GSI4SK': '#METADATA',
             'id': user_id,
             'email': email,
             'name': name,
@@ -31,7 +68,9 @@ class UserService(BaseService):
             'type': type,
             'status': 'online',
             'last_active': timestamp,
-            'created_at': timestamp
+            'created_at': timestamp,
+            'role': role,
+            'bio': bio
         }
         
         try:
@@ -40,6 +79,25 @@ class UserService(BaseService):
         except Exception as e:
             print(f"Error creating user {name}: {str(e)}")
             raise e
+
+    def get_user_by_name(self, name: str) -> Optional[User]:
+        """Get a user by their username."""
+        print(f"\n=== Getting user by name: {name} ===")
+        try:
+            response = self.table.query(
+                IndexName='GSI4',
+                KeyConditionExpression=Key('GSI4PK').eq(f'NAME#{name}')
+            )
+            
+            if response['Items']:
+                item = response['Items'][0]
+                print(f"Found user: {item['name']} (id: {item['id']})")
+                return User(**self._clean_item(item))
+            print("No user found with this username")
+            return None
+        except Exception as e:
+            print(f"Error getting user by name: {str(e)}")
+            raise
 
     def get_user_by_email(self, email: str) -> Optional[User]:
         """Get a user by their email address."""

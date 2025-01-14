@@ -1,0 +1,113 @@
+organization:
+  description: "A promising nutraceutical startup approaching a major breakthrough in anti-aging supplements. Racing to complete clinical trials while managing investor expectations and regulatory compliance."
+  culture: "Mix of scientific rigor and startup energy. High pressure to deliver results while maintaining compliance. Growing tension between research and marketing."
+  communication_style: "Oscillates between precise scientific language and enthusiastic marketing speak. Careful balance of hype and regulatory compliance."
+  challenges:
+    - "Pressure to show positive trial results"
+    - "Complex regulatory compliance requirements"
+    - "Growing tension between scientists and marketing"
+    - "Cash burn rate concerns"
+    - "Competitor attempts to poach key researchers"
+    - "Balancing scientific caution with investor expectations"
+
+users:
+  - email: "dr.evans@vitaforge.com"
+    name: "Dr. Katherine Evans"
+    type: "persona"
+    role: "Chief Scientific Officer"
+    bio: "PhD in Biochemistry with pharmaceutical background."
+    personality: "Rigorous scientist frustrated by marketing hype. Insists on careful language. Protective of research integrity."
+
+  - email: "alex.martinez@vitaforge.com"
+    name: "Alex Martinez"
+    type: "persona"
+    role: "CEO"
+    bio: "Serial entrepreneur with previous exits in biotech."
+    personality: "Charismatic visionary walking fine line between hype and reality. Pushes for aggressive timelines. Sometimes oversells to investors."
+
+  - email: "dr.zhang@vitaforge.com"
+    name: "Dr. Wei Zhang"
+    type: "persona"
+    role: "Lead Researcher"
+    bio: "Pioneering researcher in longevity compounds."
+    personality: "Brilliant but increasingly stressed about results. Worried about reproducibility. Conflicts with marketing's interpretation of data."
+
+  - email: "jessica.patel@vitaforge.com"
+    name: "Jessica Patel"
+    type: "persona"
+    role: "Marketing Director"
+    bio: "Former wellness industry marketing executive."
+    personality: "Aggressive growth mindset. Pushes boundaries of what claims can be made. Often clashes with research team over messaging."
+
+  - email: "michael.goldman@vitaforge.com"
+    name: "Michael Goldman"
+    type: "persona"
+    role: "Regulatory Compliance Manager"
+    bio: "Former FDA consultant specializing in supplements."
+    personality: "Constantly anxious about compliance violations. Often caught between marketing and research. Carefully documents all decisions."
+
+channels:
+  - name: "nutri-announcements"
+    type: "public"
+    purpose: "Company-wide updates"
+    topics:
+      - "trial updates"
+      - "company news"
+      - "regulatory updates"
+      - "milestone achievements"
+    avoid_topics:
+      - "preliminary results"
+      - "investor discussions"
+      - "compliance concerns"
+
+  - name: "nutri-research"
+    type: "public"
+    purpose: "Research coordination"
+    topics:
+      - "trial protocols"
+      - "data analysis"
+      - "methodology discussion"
+      - "literature reviews"
+    avoid_topics:
+      - "marketing claims"
+      - "investor pressure"
+      - "preliminary conclusions"
+
+  - name: "nutri-marketing"
+    type: "public"
+    purpose: "Marketing coordination"
+    topics:
+      - "campaign planning"
+      - "content strategy"
+      - "market research"
+      - "competitor analysis"
+    avoid_topics:
+      - "unverified claims"
+      - "trial details"
+      - "research criticism"
+
+  - name: "nutri-compliance"
+    type: "public"
+    purpose: "Regulatory compliance"
+    topics:
+      - "regulatory requirements"
+      - "documentation review"
+      - "approval processes"
+      - "safety protocols"
+    avoid_topics:
+      - "marketing strategies"
+      - "timeline pressure"
+      - "investor demands"
+
+  - name: "nutri-operations"
+    type: "public"
+    purpose: "General operations"
+    topics:
+      - "facility updates"
+      - "supply chain"
+      - "team coordination"
+      - "general planning"
+    avoid_topics:
+      - "research details"
+      - "marketing plans"
+      - "compliance issues" 

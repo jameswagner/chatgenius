@@ -12,6 +12,8 @@ class User:
     last_active: Optional[datetime] = None
     created_at: datetime = None
     password: Optional[str] = None  # Make password optional since we don't always need it
+    role: Optional[str] = None  # Role for persona users
+    bio: Optional[str] = None   # Bio for persona users
 
     def to_dict(self):
         # Convert string timestamps to datetime objects if needed
@@ -34,5 +36,7 @@ class User:
             'type': self.type,
             'status': self.status,
             'lastActive': self.last_active.isoformat() if self.last_active else None,
-            'createdAt': self.created_at.isoformat() if self.created_at else None
+            'createdAt': self.created_at.isoformat() if self.created_at else None,
+            'role': self.role,
+            'bio': self.bio
         } 

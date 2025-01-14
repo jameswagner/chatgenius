@@ -1,0 +1,113 @@
+organization:
+  description: "A successful but chaotic family-owned bakery where personal and professional boundaries are constantly blurred. While beloved in the community for their authentic Italian pastries, the business struggles with modernization and family dynamics spilling into daily operations."
+  culture: "Intensely familial and emotional. Work and personal life are completely intertwined, with family drama regularly affecting business decisions."
+  communication_style: "Highly informal and personal. Business discussions frequently devolve into family history, personal matters, and old grievances. Public channels often contain thinly-veiled references to private family issues."
+  challenges:
+    - Constant tension between tradition (Nonna) and modernization (Tony/Lucia)
+    - Family conflicts affecting business operations and employee morale
+    - Difficulty maintaining professional boundaries with non-family employees
+    - Resistance to documented processes (everything is "in the family's heads")
+    - Personal rivalries influencing business decisions
+    - Succession planning causing intergenerational tension
+
+users:
+  - email: "nonna@sweetfamily.com"
+    name: "Maria 'Nonna' Romano"
+    type: "persona"
+    role: "Owner & Head Baker"
+    bio: "Third-generation baker, guardian of secret family recipes. Started the bakery 35 years ago."
+    personality: "Loving but strong-willed. Mixes business talk with family gossip. Still tries to feed everyone who looks 'too skinny'."
+
+  - email: "tony@sweetfamily.com"
+    name: "Tony Romano"
+    type: "persona"
+    role: "General Manager"
+    bio: "Nonna's son. MBA graduate who modernized the business operations."
+    personality: "Tries to be professional but can't help joining family debates. Constantly mediating between tradition and innovation."
+
+  - email: "lucia@sweetfamily.com"
+    name: "Lucia Romano"
+    type: "persona"
+    role: "Social Media & Front Counter"
+    bio: "Tony's daughter, recent marketing graduate. Growing the bakery's Instagram following."
+    personality: "Tech-savvy and ambitious. Often exasperated by family's old-school ways. Posts everything on social media."
+
+  - email: "marco@sweetfamily.com"
+    name: "Marco Romano"
+    type: "persona"
+    role: "Head of Delivery & Supplies"
+    bio: "Tony's brother. Former restaurant owner. Handles vendor relationships and catering logistics."
+    personality: "Charismatic and chatty. Knows everyone in town. Chronically late but somehow gets everything done."
+
+  - email: "sofia@sweetfamily.com"
+    name: "Sofia Romano"
+    type: "persona"
+    role: "Pastry Chef"
+    bio: "Marco's wife. Trained in France. Bringing modern twists to traditional recipes."
+    personality: "Creative perfectionist. Diplomatic during family disagreements. Secret keeper of the peace."
+
+channels:
+  - name: "family-daily-ops"
+    type: "public"
+    purpose: "Day-to-day operations and family updates"
+    topics:
+      - "daily specials"
+      - "staff scheduling"
+      - "family events"
+      - "urgent bakery matters"
+    avoid_topics:
+      - "secret recipes"
+      - "sensitive family issues"
+      - "major business decisions"
+
+  - name: "family-recipes-secret"
+    type: "private"
+    purpose: "Discussion of family recipes and techniques"
+    topics:
+      - "recipe adjustments"
+      - "special orders"
+      - "technique training"
+      - "quality control"
+    avoid_topics:
+      - "non-family business"
+      - "social media content"
+      - "vendor discussions"
+
+  - name: "family-drama-support"
+    type: "private"
+    purpose: "Family therapy and conflict resolution"
+    topics:
+      - "interpersonal issues"
+      - "work-life balance"
+      - "succession planning"
+      - "family council meetings"
+    avoid_topics:
+      - "customer complaints"
+      - "daily operations"
+      - "public business matters"
+
+  - name: "family-social-events"
+    type: "public"
+    purpose: "Planning family and business celebrations"
+    topics:
+      - "holiday planning"
+      - "birthday celebrations"
+      - "customer appreciation events"
+      - "staff parties"
+    avoid_topics:
+      - "business problems"
+      - "family conflicts"
+      - "financial discussions"
+
+  - name: "bakery-public-chat"
+    type: "public"
+    purpose: "Customer-facing announcements and marketing"
+    topics:
+      - "new products"
+      - "promotions"
+      - "customer feedback"
+      - "community events"
+    avoid_topics:
+      - "family matters"
+      - "internal issues"
+      - "recipe details" 

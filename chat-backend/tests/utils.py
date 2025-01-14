@@ -27,7 +27,9 @@ def create_chat_table(table_name="chat_app_jrw"):
                     {'AttributeName': 'GSI2PK', 'AttributeType': 'S'},
                     {'AttributeName': 'GSI2SK', 'AttributeType': 'S'},
                     {'AttributeName': 'GSI3PK', 'AttributeType': 'S'},
-                    {'AttributeName': 'GSI3SK', 'AttributeType': 'S'}
+                    {'AttributeName': 'GSI3SK', 'AttributeType': 'S'},
+                    {'AttributeName': 'GSI4PK', 'AttributeType': 'S'},
+                    {'AttributeName': 'GSI4SK', 'AttributeType': 'S'}
                 ],
                 GlobalSecondaryIndexes=[
                     {
@@ -51,6 +53,14 @@ def create_chat_table(table_name="chat_app_jrw"):
                         'KeySchema': [
                             {'AttributeName': 'GSI3PK', 'KeyType': 'HASH'},
                             {'AttributeName': 'GSI3SK', 'KeyType': 'RANGE'}
+                        ],
+                        'Projection': {'ProjectionType': 'ALL'}
+                    },
+                    {
+                        'IndexName': 'GSI4',
+                        'KeySchema': [
+                            {'AttributeName': 'GSI4PK', 'KeyType': 'HASH'},
+                            {'AttributeName': 'GSI4SK', 'KeyType': 'RANGE'}
                         ],
                         'Projection': {'ProjectionType': 'ALL'}
                     }

@@ -39,7 +39,9 @@ def dynamodb(aws_credentials):
                 {'AttributeName': 'GSI2PK', 'AttributeType': 'S'},
                 {'AttributeName': 'GSI2SK', 'AttributeType': 'S'},
                 {'AttributeName': 'GSI3PK', 'AttributeType': 'S'},
-                {'AttributeName': 'GSI3SK', 'AttributeType': 'S'}
+                {'AttributeName': 'GSI3SK', 'AttributeType': 'S'},
+                {'AttributeName': 'GSI4PK', 'AttributeType': 'S'},
+                {'AttributeName': 'GSI4SK', 'AttributeType': 'S'}
             ],
             GlobalSecondaryIndexes=[
                 {
@@ -48,11 +50,7 @@ def dynamodb(aws_credentials):
                         {'AttributeName': 'GSI1PK', 'KeyType': 'HASH'},
                         {'AttributeName': 'GSI1SK', 'KeyType': 'RANGE'}
                     ],
-                    'Projection': {'ProjectionType': 'ALL'},
-                    'ProvisionedThroughput': {
-                        'ReadCapacityUnits': 5,
-                        'WriteCapacityUnits': 5
-                    }
+                    'Projection': {'ProjectionType': 'ALL'}
                 },
                 {
                     'IndexName': 'GSI2',
@@ -60,11 +58,7 @@ def dynamodb(aws_credentials):
                         {'AttributeName': 'GSI2PK', 'KeyType': 'HASH'},
                         {'AttributeName': 'GSI2SK', 'KeyType': 'RANGE'}
                     ],
-                    'Projection': {'ProjectionType': 'ALL'},
-                    'ProvisionedThroughput': {
-                        'ReadCapacityUnits': 5,
-                        'WriteCapacityUnits': 5
-                    }
+                    'Projection': {'ProjectionType': 'ALL'}
                 },
                 {
                     'IndexName': 'GSI3',
@@ -72,17 +66,18 @@ def dynamodb(aws_credentials):
                         {'AttributeName': 'GSI3PK', 'KeyType': 'HASH'},
                         {'AttributeName': 'GSI3SK', 'KeyType': 'RANGE'}
                     ],
-                    'Projection': {'ProjectionType': 'ALL'},
-                    'ProvisionedThroughput': {
-                        'ReadCapacityUnits': 5,
-                        'WriteCapacityUnits': 5
-                    }
+                    'Projection': {'ProjectionType': 'ALL'}
+                },
+                {
+                    'IndexName': 'GSI4',
+                    'KeySchema': [
+                        {'AttributeName': 'GSI4PK', 'KeyType': 'HASH'},
+                        {'AttributeName': 'GSI4SK', 'KeyType': 'RANGE'}
+                    ],
+                    'Projection': {'ProjectionType': 'ALL'}
                 }
             ],
-            ProvisionedThroughput={
-                'ReadCapacityUnits': 5,
-                'WriteCapacityUnits': 5
-            }
+            BillingMode='PAY_PER_REQUEST'
         )
         
         yield table
@@ -151,7 +146,18 @@ def test_create_message_with_thread(message_service, user_service, channel_servi
         thread_id=parent.id
     )
     
+    # Verify reply
     assert reply.thread_id == parent.id
+    
+    # Verify reply appears in channel messages
+    channel_messages = message_service.get_messages(channel.id)
+    assert len(channel_messages) == 1  # Parent message
+    
+    # Verify reply appears in thread messages
+    thread_messages = message_service.get_thread_messages(parent.id)
+    assert len(thread_messages) == 1
+    assert thread_messages[0].id == reply.id
+    assert thread_messages[0].thread_id == parent.id
 
 def test_get_message(message_service, user_service, channel_service):
     """Test retrieving a message by ID"""
@@ -235,7 +241,7 @@ def test_get_thread_messages(message_service, user_service, channel_service):
     
     # Create replies
     replies = []
-    for i in range(2):
+    for i in range(3):
         reply = message_service.create_message(
             channel_id=channel.id,
             user_id=user.id,
@@ -246,8 +252,18 @@ def test_get_thread_messages(message_service, user_service, channel_service):
     
     # Get thread messages
     thread_messages = message_service.get_thread_messages(parent.id)
-    assert len(thread_messages) == 2
-    assert all(m.thread_id == parent.id for m in thread_messages)
+    
+    # Verify only replies are returned (not parent message)
+    assert len(thread_messages) == 3
+    assert all(msg.thread_id == parent.id for msg in thread_messages)
+    
+    # Verify chronological order
+    assert all(thread_messages[i].created_at <= thread_messages[i+1].created_at 
+              for i in range(len(thread_messages)-1))
+    
+    # Verify content matches
+    for i, msg in enumerate(thread_messages):
+        assert msg.content == f"Reply {i}"
 
 def test_update_message(message_service, user_service, channel_service):
     """Test updating a message's content"""
@@ -270,3 +286,205 @@ def test_update_message(message_service, user_service, channel_service):
     assert updated.content == "Updated content"
     assert updated.is_edited is True
     assert hasattr(updated, 'edited_at') 
+
+def test_get_messages_with_threads(message_service, user_service, channel_service):
+    """Test retrieving messages with thread replies from a channel"""
+    user = create_test_user(user_service)
+    channel = create_test_channel(channel_service)
+    
+    # Create parent message
+    parent = message_service.create_message(
+        channel_id=channel.id,
+        user_id=user.id,
+        content="Parent message"
+    )
+    
+    # Create replies
+    replies = []
+    for i in range(3):
+        reply = message_service.create_message(
+            channel_id=channel.id,
+            user_id=user.id,
+            content=f"Reply {i}",
+            thread_id=parent.id
+        )
+        replies.append(reply)
+    
+    # Create another regular message
+    regular = message_service.create_message(
+        channel_id=channel.id,
+        user_id=user.id,
+        content="Regular message"
+    )
+    
+    # Get channel messages
+    channel_messages = message_service.get_messages(channel.id)
+    assert len(channel_messages) == 2  # Parent + regular message
+    
+    # Get thread messages
+    thread_messages = message_service.get_thread_messages(parent.id)
+    assert len(thread_messages) == 3  # All replies
+    
+    # Verify chronological order
+    assert all(thread_messages[i].created_at <= thread_messages[i+1].created_at 
+              for i in range(len(thread_messages)-1))
+    
+    # Verify thread messages have correct thread_id
+    assert all(msg.thread_id == parent.id for msg in thread_messages)
+    
+    # Verify content matches
+    for i, msg in enumerate(thread_messages):
+        assert msg.content == f"Reply {i}" 
+
+def test_get_message_with_thread_id(message_service, user_service, channel_service):
+    """Test retrieving a message using thread_id parameter"""
+    user = create_test_user(user_service)
+    channel = create_test_channel(channel_service)
+    
+    # Create parent message
+    parent = message_service.create_message(
+        channel_id=channel.id,
+        user_id=user.id,
+        content="Parent message"
+    )
+    
+    # Create reply in thread
+    reply = message_service.create_message(
+        channel_id=channel.id,
+        user_id=user.id,
+        content="Reply message",
+        thread_id=parent.id
+    )
+    
+    # Get reply using thread_id
+    retrieved = message_service.get_message(reply.id, thread_id=parent.id)
+    assert retrieved is not None
+    assert retrieved.id == reply.id
+    assert retrieved.content == reply.content
+    assert retrieved.thread_id == parent.id
+    
+    # Verify user data is attached
+    assert retrieved.user is not None
+    assert retrieved.user.id == user.id
+    assert retrieved.user.name == user.name 
+
+def test_get_user_messages(message_service, user_service, channel_service):
+    """Test retrieving all messages created by a user"""
+    # Create two users
+    user1 = create_test_user(user_service, "user1", "User One")
+    user2 = create_test_user(user_service, "user2", "User Two")
+    channel = create_test_channel(channel_service)
+    
+    # Create messages from both users
+    user1_messages = []
+    for i in range(3):
+        msg = message_service.create_message(
+            channel_id=channel.id,
+            user_id=user1.id,
+            content=f"User1 Message {i}"
+        )
+        user1_messages.append(msg)
+    
+    # Create messages from user2
+    for i in range(2):
+        message_service.create_message(
+            channel_id=channel.id,
+            user_id=user2.id,
+            content=f"User2 Message {i}"
+        )
+    
+    # Get user1's messages
+    messages = message_service.get_user_messages(user1.id)
+    
+    # Verify only user1's messages are returned
+    assert len(messages) == 3
+    assert all(msg.user_id == user1.id for msg in messages)
+    assert all(msg.user.id == user1.id for msg in messages)
+    
+    # Verify messages are in reverse chronological order
+    assert all(messages[i].created_at >= messages[i+1].created_at 
+              for i in range(len(messages)-1))
+
+def test_get_user_messages_with_pagination(message_service, user_service, channel_service):
+    """Test pagination of user messages"""
+    user = create_test_user(user_service)
+    channel = create_test_channel(channel_service)
+    
+    # Create 5 messages
+    messages = []
+    for i in range(5):
+        msg = message_service.create_message(
+            channel_id=channel.id,
+            user_id=user.id,
+            content=f"Message {i}"
+        )
+        messages.append(msg)
+    
+    # Get first 2 messages
+    first_page = message_service.get_user_messages(user.id, limit=2)
+    assert len(first_page) == 2
+    
+    # Get next page using the last message's timestamp
+    second_page = message_service.get_user_messages(
+        user_id=user.id,
+        before=first_page[-1].created_at,
+        limit=2
+    )
+    assert len(second_page) == 2
+    
+    # Verify no duplicate messages between pages
+    first_ids = {msg.id for msg in first_page}
+    second_ids = {msg.id for msg in second_page}
+    assert not (first_ids & second_ids)  # No intersection
+    
+    # Verify chronological order across pages
+    assert all(first_page[i].created_at >= first_page[i+1].created_at 
+              for i in range(len(first_page)-1))
+    assert all(second_page[i].created_at >= second_page[i+1].created_at 
+              for i in range(len(second_page)-1))
+    assert first_page[-1].created_at >= second_page[0].created_at
+
+def test_get_user_messages_includes_thread_replies(message_service, user_service, channel_service):
+    """Test that get_user_messages includes thread replies"""
+    user = create_test_user(user_service)
+    channel = create_test_channel(channel_service)
+    
+    # Create a parent message
+    parent = message_service.create_message(
+        channel_id=channel.id,
+        user_id=user.id,
+        content="Parent message"
+    )
+    
+    # Create some replies in the thread
+    replies = []
+    for i in range(2):
+        reply = message_service.create_message(
+            channel_id=channel.id,
+            user_id=user.id,
+            content=f"Reply {i}",
+            thread_id=parent.id
+        )
+        replies.append(reply)
+    
+    # Get user's messages
+    messages = message_service.get_user_messages(user.id)
+    
+    # Should include both parent and replies
+    assert len(messages) == 3
+    
+    # Verify we have both types of messages
+    parent_messages = [m for m in messages if not m.thread_id]
+    reply_messages = [m for m in messages if m.thread_id]
+    
+    assert len(parent_messages) == 1
+    assert len(reply_messages) == 2
+    
+    # Verify thread relationships
+    for reply in reply_messages:
+        assert reply.thread_id == parent.id
+
+def test_get_user_messages_invalid_user(message_service):
+    """Test getting messages for non-existent user"""
+    with pytest.raises(ValueError, match="User not found"):
+        message_service.get_user_messages("nonexistent_user") 

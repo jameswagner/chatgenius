@@ -22,29 +22,46 @@ class DynamoDB:
             PK=USER#{id} SK=#METADATA
             GSI1PK=TYPE#{type} GSI1SK=NAME#{name}
             GSI2PK=EMAIL#{email} GSI2SK=#METADATA
+            GSI4PK=NAME#{name} GSI4SK=#METADATA  # For username uniqueness and lookup
             
         - Channels:
             PK=CHANNEL#{id} SK=#METADATA
             GSI1PK=TYPE#{type} GSI1SK=NAME#{name}
+            GSI4PK=WORKSPACE#{workspace_id} GSI4SK=CHANNEL#{channel_id}  # For workspace channel membership
             
         - Channel Members:
             PK=CHANNEL#{channel_id} SK=MEMBER#{user_id}
             GSI2PK=USER#{user_id} GSI2SK=CHANNEL#{channel_id}
             
-        - Messages:
+        - Messages (Parent):
             PK=MSG#{message_id} SK=MSG#{message_id}
-            GSI1PK=CHANNEL#{channel_id} or THREAD#{thread_id} GSI1SK=TS#{timestamp}
+            GSI1PK=CHANNEL#{channel_id} GSI1SK=TS#{timestamp}
             GSI2PK=USER#{user_id} GSI2SK=TS#{timestamp}
             Attributes:
                 - reactions: Map<emoji, List<user_id>>
-                - thread_id: Optional[str]
+                - attachments: Optional[List[str]]
+                
+        - Messages (Replies):
+            PK=MSG#{thread_id} SK=REPLY#{message_id}
+            GSI1PK=CHANNEL#{channel_id} GSI1SK=TS#{timestamp}
+            GSI2PK=USER#{user_id} GSI2SK=TS#{timestamp}
+            Attributes:
+                - reactions: Map<emoji, List<user_id>>
+                - thread_id: str  # Parent message ID
                 - attachments: Optional[List[str]]
                 
         - Search Index:
             PK=WORD#{word} SK=MESSAGE#{message_id}
             GSI3PK=CONTENT#{word} GSI3SK=TS#{timestamp}
+            
+        Access Patterns:
+        - Get channel messages: Query GSI1 (CHANNEL#{id})
+        - Get thread messages: Query PK=MSG#{thread_id}, SK begins_with REPLY#
+        - Get user's messages: Query GSI2 (USER#{id})
+        - Search messages: Query GSI3 (CONTENT#{word})
+        - Get user by username: Query GSI4 (NAME#{name})
         """
-        self.table_name = table_name or os.getenv('DYNAMODB_TABLE')
+        self.table_name = table_name or os.getenv('DYNAMODB_TABLE', 'chat_app_jrw')
         self.dynamodb = boto3.resource('dynamodb')
         self.table = self.dynamodb.Table(self.table_name)
         self.user_service = UserService(table_name)
@@ -91,24 +108,6 @@ class DynamoDB:
     def create_user(self, email: str, name: str, password: str, type: str = 'user') -> User:
         return self.user_service.create_user(email, name, password, type)
 
-    """
-    Data Structure:
-    
-    Single Table Design with the following patterns:
-    
-    PK (Partition Key) | SK (Sort Key)     | GSI1PK          | GSI1SK           | Attributes
-    -------------------------------------------------------------------------------
-    USER#<id>         | #METADATA          | STATUS#<status> | TS#<timestamp>   | user data
-    CHANNEL#<id>      | #METADATA          | TYPE#<type>     | NAME#<name>      | channel data
-    CHANNEL#<id>      | MEMBER#<user_id>   | USER#<user_id>  | TS#<timestamp>   | member data
-    CHANNEL#<id>      | MSG#<timestamp>    | USER#<user_id>  | THREAD#<id>      | message data
-    MESSAGE#<id>      | REACTION#<user_id> | EMOJI#<emoji>   | TS#<timestamp>   | reaction data
-    
-    GSI1: Global Secondary Index for queries by status, type, etc.
-    GSI2: Global Secondary Index for user's channels (USER#<id> | CHANNEL#<id>)
-    GSI3: Global Secondary Index for message search (CONTENT#<word> | TS#<timestamp>)
-    """
-    
     def get_user_by_email(self, email: str) -> Optional[User]:
         return self.user_service.get_user_by_email(email)
 
@@ -165,14 +164,19 @@ class DynamoDB:
         """Create a new message"""
         return self.message_service.create_message(channel_id, user_id, content, thread_id, attachments)
 
-    def get_message(self, message_id: str) -> Optional[Message]:
-        return self.message_service.get_message(message_id)
+    def get_message(self, message_id: str, thread_id: Optional[str] = None) -> Optional[Message]:
+        """Get a message by ID. If thread_id is provided, the message is retrieved as a reply in that thread."""
+        return self.message_service.get_message(message_id, thread_id)
 
     def get_messages(self, channel_id: str, before: str = None, limit: int = 50) -> List[Message]:
         return self.message_service.get_messages(channel_id, before, limit)
 
-    def add_reaction(self, message_id: str, user_id: str, emoji: str) -> Reaction:
-        return self.message_service.add_reaction(message_id, user_id, emoji)
+    def get_user_messages(self, user_id: str, before: str = None, limit: int = 50) -> List[Message]:
+        """Get messages created by a user."""
+        return self.message_service.get_user_messages(user_id, before, limit)
+
+    def add_reaction(self, message_id: str, user_id: str, emoji: str, thread_id: Optional[str] = None) -> Reaction:
+        return self.message_service.add_reaction(message_id, user_id, emoji, thread_id)
 
     def get_thread_messages(self, thread_id: str) -> List[Message]:
         return self.message_service.get_thread_messages(thread_id)
@@ -180,8 +184,8 @@ class DynamoDB:
     def get_message_reactions(self, message_id: str) -> List[Reaction]:
         return self.message_service.get_message_reactions(message_id)
 
-    def remove_reaction(self, message_id: str, user_id: str, emoji: str) -> None:
-        return self.message_service.remove_reaction(message_id, user_id, emoji)
+    def remove_reaction(self, message_id: str, user_id: str, emoji: str, thread_id: Optional[str] = None) -> None:
+        return self.message_service.remove_reaction(message_id, user_id, emoji, thread_id)
 
     def update_message(self, message_id: str, content: str) -> Message:
         return self.message_service.update_message(message_id, content)
@@ -192,3 +196,35 @@ class DynamoDB:
     def is_channel_member(self, channel_id: str, user_id: str) -> bool:
         """Check if a user is a member of a channel."""
         return self.channel_service.is_channel_member(channel_id, user_id)
+
+    def get_user_by_name(self, name: str) -> Optional[User]:
+        """Get a user by their username."""
+        return self.user_service.get_user_by_name(name)
+
+    def get_workspace_channels(self, workspace_id: str) -> List[Channel]:
+        """Get all channels in a workspace.
+        
+        Args:
+            workspace_id: The ID of the workspace
+            
+        Returns:
+            List of channels in the workspace
+        """
+        return self.channel_service.get_workspace_channels(workspace_id)
+
+    def find_channels_without_workspace(self) -> List[Channel]:
+        """Find all channels that don't have a workspace assigned and assign them to NO_WORKSPACE.
+        
+        Returns:
+            List of channels that were updated with NO_WORKSPACE
+        """
+        return self.channel_service.find_channels_without_workspace()
+
+    def add_channel_to_workspace(self, channel_id: str, workspace_id: str) -> None:
+        """Add a channel to a workspace.
+        
+        Args:
+            channel_id: The ID of the channel
+            workspace_id: The ID of the workspace
+        """
+        self.channel_service.add_channel_to_workspace(channel_id, workspace_id)

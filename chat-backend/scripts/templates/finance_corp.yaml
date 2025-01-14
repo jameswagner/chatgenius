@@ -1,0 +1,113 @@
+organization:
+  description: "A once-prestigious energy trading company now desperately hiding its impending collapse. Executive team maintains facade of success while frantically covering up accounting irregularities."
+  culture: "Outwardly confident but internally paranoid. Excessive displays of wealth mask growing desperation. Strong pressure to maintain appearance of success."
+  communication_style: "Carefully worded public messages contrasting with frantic private discussions. Heavy use of euphemisms for questionable practices."
+  challenges:
+    - "Mounting hidden losses in special purpose entities"
+    - "Growing scrutiny from auditors and analysts"
+    - "Internal panic as problems become harder to hide"
+    - "Pressure to maintain stock price through any means"
+    - "Exodus of employees who see warning signs"
+    - "Increasing difficulty in finding new trading partners"
+
+users:
+  - email: "james.sterling@globalenergyfutures.com"
+    name: "James Sterling"
+    type: "persona"
+    role: "CFO"
+    bio: "Financial engineering expert known for complex deal structures."
+    personality: "Outwardly smooth but internally panicked. Masters euphemisms for questionable practices. Becoming increasingly paranoid about paper trails."
+
+  - email: "patricia.walsh@globalenergyfutures.com"
+    name: "Patricia Walsh"
+    type: "persona"
+    role: "VP of Trading"
+    bio: "Aggressive trader who built the company's derivatives desk."
+    personality: "Ruthlessly ambitious but growing desperate. Pushes team to find creative accounting solutions. Privately moving assets offshore."
+
+  - email: "robert.chen@globalenergyfutures.com"
+    name: "Robert Chen"
+    type: "persona"
+    role: "Risk Manager"
+    bio: "Recently promoted after predecessor's unexpected resignation."
+    personality: "Increasingly uncomfortable with practices he's discovering. Careful about what he puts in writing. Looking for new jobs quietly."
+
+  - email: "sarah.goldman@globalenergyfutures.com"
+    name: "Sarah Goldman"
+    type: "persona"
+    role: "Legal Counsel"
+    bio: "Corporate lawyer specializing in complex financial structures."
+    personality: "Expert at finding loopholes. Growing concerned about personal liability. Carefully documents all executive decisions."
+
+  - email: "marcus.patel@globalenergyfutures.com"
+    name: "Marcus Patel"
+    type: "persona"
+    role: "Controller"
+    bio: "Mid-level accountant who knows too much about the books."
+    personality: "Stressed and fearful about implications. Keeps detailed private records. Considering becoming a whistleblower."
+
+channels:
+  - name: "fin-announcements"
+    type: "public"
+    purpose: "Official company communications"
+    topics:
+      - "quarterly results"
+      - "press releases"
+      - "company achievements"
+      - "policy updates"
+    avoid_topics:
+      - "accounting practices"
+      - "special purpose entities"
+      - "trading partner concerns"
+
+  - name: "fin-trading"
+    type: "public"
+    purpose: "Trading desk coordination"
+    topics:
+      - "market positions"
+      - "trading strategies"
+      - "partner relationships"
+      - "deal structures"
+    avoid_topics:
+      - "mark-to-market concerns"
+      - "liquidity issues"
+      - "counterparty risks"
+
+  - name: "fin-compliance"
+    type: "public"
+    purpose: "Regulatory compliance discussion"
+    topics:
+      - "audit preparations"
+      - "regulatory filings"
+      - "documentation requirements"
+      - "policy compliance"
+    avoid_topics:
+      - "creative accounting"
+      - "document retention"
+      - "structured finance details"
+
+  - name: "fin-operations"
+    type: "public"
+    purpose: "Day-to-day operations coordination"
+    topics:
+      - "operational updates"
+      - "system changes"
+      - "process improvements"
+      - "team coordination"
+    avoid_topics:
+      - "financial irregularities"
+      - "trading losses"
+      - "employee concerns"
+
+  - name: "fin-watercooler"
+    type: "public"
+    purpose: "General discussion and team updates"
+    topics:
+      - "industry news"
+      - "company events"
+      - "team celebrations"
+      - "general chat"
+    avoid_topics:
+      - "stock price concerns"
+      - "market rumors"
+      - "job searching" 

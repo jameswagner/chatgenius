@@ -8,9 +8,10 @@ interface MessageInputProps {
   placeholder?: string;
   currentChannelName: string;
   isDM?: boolean;
+  testId?: string;
 }
 
-export const MessageInput = ({ channelId, onSendMessage, threadId, placeholder, currentChannelName, isDM = false }: MessageInputProps) => {
+export const MessageInput = ({ channelId, onSendMessage, threadId, placeholder, currentChannelName, isDM = false, testId = "message-input" }: MessageInputProps) => {
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -78,7 +79,7 @@ export const MessageInput = ({ channelId, onSendMessage, threadId, placeholder, 
           onChange={(e) => setMessage(e.target.value)}
           placeholder={placeholder || `Message ${isDM ? '' : '#'}${currentChannelName}`}
           className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:border-blue-500"
-          data-testid="message-input"
+          data-testid={testId}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !isDisabled) {
               e.preventDefault();

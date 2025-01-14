@@ -33,7 +33,7 @@ export const MessageReactions = ({ message, onReactionChange }: MessageReactions
 
   const handleAddReaction = async (emoji: string) => {
     try {
-      await api.reactions.add(message.id, emoji);
+      await api.reactions.add(message.id, emoji, message.threadId);
       onReactionChange();
       setShowPicker(false);
     } catch (err) {
@@ -43,7 +43,7 @@ export const MessageReactions = ({ message, onReactionChange }: MessageReactions
 
   const handleRemoveReaction = async (emoji: string) => {
     try {
-      await api.reactions.remove(message.id, emoji);
+      await api.reactions.remove(message.id, emoji, message.threadId);
       onReactionChange();
     } catch (err) {
       console.error('Failed to remove reaction:', err);

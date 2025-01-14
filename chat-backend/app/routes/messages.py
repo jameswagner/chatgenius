@@ -59,8 +59,9 @@ def remove_reaction(message_id, emoji):
         return '', 200
         
     user_id = request.user_id
-    db.remove_reaction(message_id, user_id, emoji)
-    message = db.get_message(message_id)
+    thread_id = request.args.get('thread_id')
+    db.remove_reaction(message_id, user_id, emoji, thread_id)
+    message = db.get_message(message_id, thread_id=thread_id)
     if not message:
         return jsonify({'error': 'Message not found'}), 404
     return jsonify(message.to_dict())
@@ -75,9 +76,10 @@ def add_reaction(message_id):
     user_id = request.user_id
     data = request.get_json()
     emoji = data['emoji']
+    thread_id = request.args.get('thread_id')
     
-    reaction = db.add_reaction(message_id, user_id, emoji)
-    message = db.get_message(message_id)
+    reaction = db.add_reaction(message_id, user_id, emoji, thread_id)
+    message = db.get_message(message_id, thread_id=thread_id)
     if not message:
         return jsonify({'error': 'Message not found'}), 404
     
@@ -89,7 +91,8 @@ def add_reaction(message_id):
 @cross_origin()
 @auth_required
 def get_message(message_id):
-    message = db.get_message(message_id)
+    thread_id = request.args.get('thread_id')
+    message = db.get_message(message_id, thread_id=thread_id)
     if not message:
         return jsonify({'error': 'Message not found'}), 404
     return jsonify(message.to_dict())
@@ -107,8 +110,9 @@ def update_message(message_id):
         
     user_id = request.user_id
     data = request.get_json()
+    thread_id = request.args.get('thread_id')
     
-    message = db.get_message(message_id)
+    message = db.get_message(message_id, thread_id=thread_id)
     if not message:
         return jsonify({'error': 'Message not found'}), 404
         
@@ -119,4 +123,22 @@ def update_message(message_id):
     message_data = updated_message.to_dict()
     socketio.emit('message.update', message_data, room=message.channel_id)
     
-    return jsonify(message_data) 
+    return jsonify(message_data)
+
+@bp.route('/users/<user_id>/messages')
+@auth_required
+def get_user_messages(user_id):
+    """Get messages created by a user."""
+    try:
+        before = request.args.get('before')  # Optional timestamp for pagination
+        limit = request.args.get('limit', 50, type=int)
+        if limit < 1 or limit > 100:
+            limit = 50
+            
+        messages = db.get_user_messages(user_id, before, limit)
+        return jsonify([msg.to_dict() for msg in messages])
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        print(f"Error getting user messages: {str(e)}")
+        return jsonify({'error': 'Failed to get messages'}), 500 

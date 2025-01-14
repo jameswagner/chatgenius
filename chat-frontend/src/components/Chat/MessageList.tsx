@@ -21,6 +21,13 @@ interface ThreadGroup {
 }
 
 export const MessageList = ({ channelId, messages, setMessages, currentChannelName, onThreadClick }: MessageListProps) => {
+  // Log raw messages at component start
+  console.log('\nMessageList received raw messages:', messages.map(m => ({
+    id: m.id, 
+    threadId: m.threadId,
+    content: m.content.substring(0, 20) + '...'
+  })));
+
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
   const [selectedThread, setSelectedThread] = useState<Message | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -38,24 +45,26 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
     const prevMessages = prevMessagesRef.current;
     const isNewMessage = messages.length > prevMessages.length;
     
-    console.log('Messages changed:', {
-      prevLength: prevMessages.length,
-      newLength: messages.length,
-      isNewMessage,
-      lastMessage: messages[messages.length - 1]
-    });
-    
     if (isNewMessage) {
       console.log('Scrolling due to new message');
       scrollToBottom();
-    } else {
-      console.log('Not scrolling - message was edited or no new message');
     }
 
     prevMessagesRef.current = messages;
   }, [messages]);
 
-  const toggleThread = (threadId: string) => {
+  const toggleThread = async (threadId: string) => {
+    console.log('Toggling thread:', threadId);
+    
+    // Refresh messages to ensure we have latest data
+    const updatedMessages = await api.messages.list(channelId);
+    console.log('Refreshed messages:', updatedMessages.map(m => ({
+      id: m.id,
+      threadId: m.threadId,
+      content: m.content.substring(0, 20) + '...'
+    })));
+    setMessages(updatedMessages);
+
     setExpandedThreads(prev => {
       const next = new Set(prev);
       if (next.has(threadId)) {
@@ -68,22 +77,31 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
   };
 
   // Group messages by thread
-  const threadGroups = messages.reduce((groups: ThreadGroup[], message) => {
-    if (!message.threadId || message.threadId === message.id) {
-      // This is a parent message
-      groups.push({
-        threadId: message.id,
-        messages: [message]
-      });
-    } else {
-      // This is a reply
-      const parentGroup = groups.find(g => g.threadId === message.threadId);
-      if (parentGroup) {
-        parentGroup.messages.push(message);
-      }
-    }
-    return groups;
-  }, []);
+  console.log('\nStarting message grouping with:', messages.map(m => ({
+    id: m.id,
+    threadId: m.threadId,
+    replyCount: m.replies?.length,
+    content: m.content.substring(0, 20) + '...'
+  })));
+
+  // Only include parent messages (those without a threadId) in the main list
+  const threadGroups = messages
+    .filter(message => !message.threadId) // Filter out replies
+    .map(message => ({
+      threadId: message.id,
+      messages: [message, ...(message.replies || [])]
+    }));
+
+  console.log('\nFinal thread groups:', threadGroups.map(group => ({
+    threadId: group.threadId,
+    messageCount: group.messages.length,
+    replyCount: group.messages.length - 1,
+    messages: group.messages.map(m => ({
+      id: m.id,
+      threadId: m.threadId,
+      content: m.content.substring(0, 20) + '...'
+    }))
+  })));
 
   const renderMessage = (message: Message, isReply = false) => {
     return (
@@ -101,9 +119,26 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
   };
 
   const renderThread = (thread: ThreadGroup) => {
+    console.log('\nRendering thread:', {
+      threadId: thread.threadId,
+      messageCount: thread.messages.length,
+      messages: thread.messages.map(m => ({
+        id: m.id,
+        threadId: m.threadId,
+        content: m.content.substring(0, 20) + '...'
+      }))
+    });
+
     const [firstMessage, ...replies] = thread.messages;
     const isExpanded = expandedThreads.has(thread.threadId);
     const replyCount = replies.length;
+
+    console.log('Thread details:', {
+      firstMessageId: firstMessage.id,
+      replyCount,
+      isExpanded
+    });
+
     const replyText = replyCount === 1 ? '1 reply' : `${replyCount} replies`;
 
     return (
@@ -111,7 +146,8 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
         {renderMessage(firstMessage)}
 
         <div className="flex items-center mt-1 space-x-3 ml-13">
-          <button 
+          <button
+            data-testid={`reply-in-thread-button-${firstMessage.id}`}
             onClick={() => {
               if (onThreadClick) {
                 onThreadClick(firstMessage.id);
@@ -123,8 +159,9 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
           >
             Reply in thread
           </button>
-          {replies.length > 0 && (
+          {replyCount > 0 && (
             <button 
+              data-testid={`show-replies-button-${thread.threadId}`}
               onClick={() => toggleThread(thread.threadId)}
               className="text-sm text-gray-500 hover:text-gray-700 flex items-center"
             >
@@ -158,6 +195,7 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
         <ThreadView
           parentMessage={selectedThread}
           onClose={() => setSelectedThread(null)}
+          channelName={currentChannelName}
         />
       )}
     </div>

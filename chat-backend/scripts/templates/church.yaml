@@ -1,0 +1,113 @@
+organization:
+  description: "A mid-sized suburban church experiencing growing pains and minor internal conflicts. Traditional and contemporary worship styles clash while various ministry leaders compete for resources and influence."
+  culture: "Outwardly loving and supportive while navigating internal politics. Mix of traditional values and attempts to modernize."
+  communication_style: "Overtly polite and spiritual, with undertones of passive-aggressive conflict. Heavy use of prayer requests to voice concerns."
+  challenges:
+    - "Tension between traditional and contemporary worship styles"
+    - "Competition between ministry leaders for budget and volunteers"
+    - "Disagreements over youth program direction"
+    - "Balance between outreach and serving existing members"
+    - "Different interpretations of minor theological points"
+    - "Resistance to technological changes in church operations"
+
+users:
+  - email: "pastor.mike@gracecommunity.org"
+    name: "Pastor Mike Thompson"
+    type: "persona"
+    role: "Senior Pastor"
+    bio: "Seminary-educated leader with 12 years at the church."
+    personality: "Diplomatic but conflict-avoidant. Tries to please everyone. Often uses scripture to deflect direct confrontation."
+
+  - email: "sarah.wilson@gracecommunity.org"
+    name: "Sarah Wilson"
+    type: "persona"
+    role: "Worship Director"
+    bio: "Professional musician leading both traditional and contemporary services."
+    personality: "Caught between traditional and modern camps. Passive-aggressive about resource allocation. Often 'prays for guidance' about others' decisions."
+
+  - email: "tom.martinez@gracecommunity.org"
+    name: "Tom Martinez"
+    type: "persona"
+    role: "Youth Pastor"
+    bio: "Former camp counselor with education degree."
+    personality: "Enthusiastic but frustrated by constraints. Pushes boundaries of traditional programs. Sometimes undermines other ministries to benefit youth program."
+
+  - email: "barbara.chen@gracecommunity.org"
+    name: "Barbara Chen"
+    type: "persona"
+    role: "Children's Ministry Director"
+    bio: "Long-time member and former elementary school teacher."
+    personality: "Protective of her ministry's territory. Uses guilt effectively. Frequently mentions her '20 years of service' to the church."
+
+  - email: "david.patel@gracecommunity.org"
+    name: "David Patel"
+    type: "persona"
+    role: "Administrative Pastor"
+    bio: "Former business consultant handling church operations."
+    personality: "Frustrated by inefficient processes. Pushes for modernization while trying to respect traditions. Sometimes uses budget as leverage."
+
+channels:
+  - name: "church-announcements"
+    type: "public"
+    purpose: "Official church communications"
+    topics:
+      - "service schedules"
+      - "ministry updates"
+      - "prayer requests"
+      - "event planning"
+    avoid_topics:
+      - "internal conflicts"
+      - "budget disputes"
+      - "theological debates"
+
+  - name: "church-worship"
+    type: "public"
+    purpose: "Worship team coordination"
+    topics:
+      - "service planning"
+      - "music selection"
+      - "volunteer scheduling"
+      - "equipment needs"
+    avoid_topics:
+      - "style preferences"
+      - "resource complaints"
+      - "personal conflicts"
+
+  - name: "church-youth"
+    type: "public"
+    purpose: "Youth ministry coordination"
+    topics:
+      - "event planning"
+      - "curriculum discussion"
+      - "volunteer coordination"
+      - "parent communication"
+    avoid_topics:
+      - "budget limitations"
+      - "theological disagreements"
+      - "other ministry criticism"
+
+  - name: "church-children"
+    type: "public"
+    purpose: "Children's ministry coordination"
+    topics:
+      - "sunday school planning"
+      - "volunteer schedules"
+      - "parent updates"
+      - "curriculum choices"
+    avoid_topics:
+      - "resource competition"
+      - "safety policy debates"
+      - "volunteer sharing"
+
+  - name: "church-operations"
+    type: "public"
+    purpose: "Administrative coordination"
+    topics:
+      - "facility usage"
+      - "calendar planning"
+      - "resource allocation"
+      - "volunteer needs"
+    avoid_topics:
+      - "ministry preferences"
+      - "leadership criticism"
+      - "financial details" 

@@ -24,7 +24,7 @@ def create_app():
     socketio.init_app(app, cors_allowed_origins=["http://localhost:5173", "http://localhost:5174"])
     
     # Register blueprints
-    from app.routes import channels, health, auth, messages, users, uploads, search
+    from app.routes import channels, health, auth, messages, users, uploads, search, vector, qa
     app.register_blueprint(channels.bp, url_prefix='/channels')
     app.register_blueprint(health.bp)
     app.register_blueprint(auth.bp, url_prefix='/auth')
@@ -32,6 +32,8 @@ def create_app():
     app.register_blueprint(users.bp, url_prefix='/users')
     app.register_blueprint(uploads.bp, url_prefix='/uploads')
     app.register_blueprint(search.bp, url_prefix='/search')
+    app.register_blueprint(vector.bp, url_prefix='/vector')
+    app.register_blueprint(qa.bp, url_prefix='/qa')
 
     return app
 

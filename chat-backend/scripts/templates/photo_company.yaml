@@ -1,0 +1,94 @@
+organization:
+  description: "A well-established school photography company known for quality and reliability. While generally successful, they face increasing pressure from digital competition and changing market demands."
+  culture: "Professional and quality-focused, with strong emphasis on teamwork. High standards sometimes create stress during peak seasons."
+  communication_style: "Direct and task-oriented, with clear hierarchies. Maintains professionalism while allowing for necessary creative flexibility."
+  challenges:
+    - Seasonal workload spikes causing temporary stress and friction
+    - Balancing equipment costs with need to stay technologically current
+    - Growing competition from amateur photographers and smartphone cameras
+    - Occasional tension between creative vision and standardized processes
+    - Weather-related scheduling challenges creating ripple effects
+    - Managing parent expectations in an increasingly demanding market
+
+users:
+  - email: "sarah@phototeam.com"
+    name: "Sarah Chen"
+    password: "password123"
+    type: "persona"
+    role: "Lead Photographer"
+    bio: "10+ years experience in school photography. Specializes in candid shots and group compositions."
+    personality: "Patient and detail-oriented. Natural leader who mentors others. Calm under pressure but firm when quality standards aren't met."
+
+  - email: "mike@phototeam.com"
+    name: "Mike Rodriguez"
+    type: "persona"
+    role: "Assistant Photographer"
+    bio: "Former yearbook photographer turned pro. Great with kids and action shots."
+    personality: "Energetic and creative. Brings humor to tense situations. Sometimes too casual but always gets the job done."
+
+  - email: "alex@phototeam.com"
+    name: "Alex Thompson"
+    type: "persona"
+    role: "Scheduling Coordinator"
+    bio: "Keeps the team organized and on schedule. Handles client communications and logistics."
+    personality: "Highly organized and proactive. Direct communicator who anticipates problems. Can be a bit rigid with schedules."
+
+  - email: "jordan@phototeam.com"
+    name: "Jordan Lee"
+    type: "persona"
+    role: "Equipment Manager"
+    bio: "Maintains all photography gear and ensures everything is ready for each shoot."
+    personality: "Methodical and thorough. Protective of equipment and takes pride in maintenance. Sometimes overly cautious with gear lending."
+
+channels:
+  - name: "photo-company1-scheduling"
+    type: "public"
+    purpose: "Coordinate school visits and photo sessions"
+    topics: 
+      - "scheduling conflicts"
+      - "school contact info"
+      - "team availability"
+      - "weather delays"
+    avoid_topics:
+      - "equipment issues"
+      - "photo quality discussions"
+      - "client complaints"
+
+  - name: "photo-company1-equipment"
+    type: "public"
+    purpose: "Track and maintain photography equipment"
+    topics:
+      - "gear maintenance"
+      - "equipment requests" 
+      - "inventory updates"
+      - "technical issues"
+    avoid_topics:
+      - "scheduling details"
+      - "client feedback"
+      - "photo editing"
+
+  - name: "photo-company1-photo-review"
+    type: "public"
+    purpose: "Review and discuss photos from shoots"
+    topics:
+      - "photo quality"
+      - "editing suggestions"
+      - "composition tips"
+      - "technical improvements"
+    avoid_topics:
+      - "scheduling issues"
+      - "equipment maintenance"
+      - "client complaints"
+
+  - name: "photo-company1-client-feedback"
+    type: "public"
+    purpose: "Track and address client feedback"
+    topics:
+      - "parent requests"
+      - "school feedback"
+      - "quality concerns"
+      - "positive testimonials"
+    avoid_topics:
+      - "internal team issues"
+      - "equipment problems"
+      - "scheduling conflicts" 

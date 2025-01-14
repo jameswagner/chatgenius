@@ -107,3 +107,12 @@ def logout():
             return jsonify({'error': 'Logout failed'}), 500
             
     return handle_logout() 
+
+@bp.route('/users/name/<name>')
+@auth_required
+def get_user_by_name(name):
+    """Get a user by their username."""
+    user = db.get_user_by_name(name)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    return jsonify(user.to_dict()) 

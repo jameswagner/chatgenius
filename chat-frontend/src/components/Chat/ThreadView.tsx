@@ -8,33 +8,45 @@ import { MessageReactions } from './MessageReactions';
 interface ThreadViewProps {
   parentMessage: Message;
   onClose: () => void;
+  channelName: string;
 }
 
-export const ThreadView = ({ parentMessage, onClose }: ThreadViewProps) => {
+export const ThreadView = ({ parentMessage, onClose, channelName }: ThreadViewProps) => {
   const [replies, setReplies] = useState<Message[]>([]);
   const currentUserId = localStorage.getItem('userId');
   const [parentWithReactions, setParentWithReactions] = useState(parentMessage);
 
-  // Fetch thread messages and parent message periodically
   useEffect(() => {
-    const fetchMessages = async () => {
+    console.log('\nThreadView mounted/updated:', {
+      parentMessage: {
+        id: parentMessage.id,
+        content: parentMessage.content.substring(0, 20) + '...',
+        reactions: parentMessage.reactions
+      }
+    });
+
+    const fetchReplies = async () => {
       try {
-        const [threadReplies, updatedParent] = await Promise.all([
-          api.messages.getThreadMessages(parentMessage.id),
-          api.messages.get(parentMessage.id)
-        ]);
-        // Filter out the parent message from replies
-        const actualReplies = threadReplies.filter(msg => msg.id !== parentMessage.id);
-        setReplies(actualReplies);
-        setParentWithReactions(updatedParent);
+        const threadMessages = await api.messages.getThreadMessages(parentMessage.id);
+        console.log('Fetched thread messages:', threadMessages.map(m => ({
+          id: m.id,
+          threadId: m.threadId,
+          content: m.content.substring(0, 20) + '...'
+        })));
+        
+        // Ensure all replies have thread_id set
+        const repliesWithThreadId = threadMessages.map(reply => ({
+          ...reply,
+          threadId: parentMessage.id
+        }));
+        
+        setReplies(repliesWithThreadId);
       } catch (err) {
-        console.error('Failed to fetch messages:', err);
+        console.error('Failed to fetch replies:', err);
       }
     };
-    fetchMessages();
 
-    const interval = setInterval(fetchMessages, 3000);
-    return () => clearInterval(interval);
+    fetchReplies();
   }, [parentMessage.id]);
 
   const handleReactionChange = async () => {
@@ -43,7 +55,14 @@ export const ThreadView = ({ parentMessage, onClose }: ThreadViewProps) => {
         api.messages.getThreadMessages(parentMessage.id),
         api.messages.get(parentMessage.id)
       ]);
-      setReplies(threadReplies);
+      
+      // Update replies with thread_id
+      const repliesWithThreadId = threadReplies.map(reply => ({
+        ...reply,
+        threadId: parentMessage.id
+      }));
+      
+      setReplies(repliesWithThreadId);
       setParentWithReactions(updatedParent);
     } catch (err) {
       console.error('Failed to update reactions:', err);
@@ -133,6 +152,8 @@ export const ThreadView = ({ parentMessage, onClose }: ThreadViewProps) => {
           threadId={parentMessage.id}
           onSendMessage={handleReply}
           placeholder="Reply in thread..."
+          currentChannelName={channelName}
+          testId="thread-reply-input"
         />
       </div>
     </div>

@@ -22,6 +22,6 @@ class BaseService:
         """Remove DynamoDB-specific fields from an item."""
         cleaned = item.copy()
         # Remove DynamoDB-specific fields
-        for field in ['PK', 'SK', 'GSI1PK', 'GSI1SK', 'GSI2PK', 'GSI2SK', 'GSI3PK', 'GSI3SK']:
+        for field in ['PK', 'SK', 'GSI1PK', 'GSI1SK', 'GSI2PK', 'GSI2SK', 'GSI3PK', 'GSI3SK', 'GSI4PK', 'GSI4SK']:
             cleaned.pop(field, None)
         return cleaned 

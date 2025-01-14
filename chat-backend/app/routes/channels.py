@@ -40,12 +40,13 @@ def create_channel(trailing_slash=''):
             if existing_channel:
                 return jsonify(existing_channel.to_dict()), 200
 
-        # Create new channel
+        # Create new channel with workspace support
         channel = db.create_channel(
             name=data['name'],
             type=data.get('type', 'public'),
             created_by=user_id,
-            other_user_id=data.get('otherUserId')
+            other_user_id=data.get('otherUserId'),
+            workspace_id=data.get('workspaceId', 'NO_WORKSPACE')  # Default to NO_WORKSPACE if not specified
         )
         
         # Only emit for non-DM channels
@@ -257,3 +258,13 @@ def handle_join_channel(channel_id):
 @socketio.on('channel.leave')
 def handle_leave_channel(channel_id):
     leave_room(channel_id) 
+
+@bp.route('/workspace/<workspace_id>', methods=['GET'])
+@auth_required
+def get_workspace_channels(workspace_id):
+    """Get all channels in a workspace."""
+    try:
+        channels = db.get_workspace_channels(workspace_id)
+        return jsonify([channel.to_dict() for channel in channels])
+    except Exception as e:
+        return jsonify({'error': 'Failed to get workspace channels'}), 500 

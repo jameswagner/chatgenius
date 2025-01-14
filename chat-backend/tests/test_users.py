@@ -166,3 +166,51 @@ def test_batch_get_users(ddb):
     # Test with empty set
     empty_result = ddb._batch_get_users(set())
     assert empty_result == [] 
+
+def test_get_user_by_name(ddb):
+    """Test retrieving a user by username."""
+    # Create a user first
+    created_user = ddb.create_user(
+        email="findbyname@example.com",
+        name="FindByName",
+        password="password123"
+    )
+    
+    # Try to find the user
+    found_user = ddb.get_user_by_name("FindByName")
+    
+    assert found_user is not None
+    assert found_user.id == created_user.id
+    assert found_user.name == "FindByName"
+    assert found_user.status == "online"
+    
+    # Test non-existent user
+    not_found = ddb.get_user_by_name("NonexistentUser")
+    assert not_found is None
+
+def test_username_uniqueness(ddb):
+    """Test that usernames must be unique."""
+    # Create first user
+    ddb.create_user(
+        email="user1@example.com",
+        name="SameUsername",
+        password="password123"
+    )
+    
+    # Try to create second user with same username
+    with pytest.raises(ValueError) as exc_info:
+        ddb.create_user(
+            email="user2@example.com",
+            name="SameUsername",
+            password="password123"
+        )
+    assert "Username is already taken" in str(exc_info.value)
+    
+    # Verify different username works
+    user2 = ddb.create_user(
+        email="user2@example.com",
+        name="DifferentUsername",
+        password="password123"
+    )
+    assert user2 is not None
+    assert user2.name == "DifferentUsername" 

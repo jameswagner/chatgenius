@@ -1,0 +1,109 @@
+# Dysfunctional marketing agency template
+# Core issues:
+# - Toxic leadership style from agency director
+# - Chronic understaffing leading to burnout
+# - Culture of blame and finger-pointing
+# - Favoritism causing team divisions
+# - Unrealistic client promises creating constant crisis
+# - Senior staff hoarding knowledge as job security
+
+organization:
+  description: "A mid-sized digital marketing agency known for high employee turnover and a cutthroat environment. While producing award-winning work, the agency operates through fear, manipulation, and intense pressure. Leadership prioritizes client demands and revenue over employee wellbeing."
+  culture: "Toxic, competitive, and fear-driven with a thin veneer of 'we're all family here'. Success is attributed to leadership while failures are blamed on staff."
+  communication_style: "Passive-aggressive in public channels, openly hostile in private. Heavy use of performative positivity masking underlying tensions."
+  challenges:
+    - "Toxic leadership style from agency director"
+    - "Chronic understaffing leading to burnout"
+    - "Culture of blame and finger-pointing"
+    - "Favoritism causing team divisions"
+    - "Unrealistic client promises creating constant crisis"
+    - "Senior staff hoarding knowledge as job security"
+
+users:
+  - email: "michael@digitaledge.com"
+    name: "Michael Sterling"
+    type: "persona"
+    role: "Agency Director"
+    bio: "20 years in digital marketing. Known for landing big clients."
+    personality: "Charismatic but manipulative. Takes credit for successes, deflects failures. Creates artificial competition between team members. Prone to public criticism disguised as 'feedback'."
+
+  - email: "rachel@digitaledge.com"
+    name: "Rachel Martinez"
+    type: "persona"
+    role: "Creative Director"
+    bio: "Award-winning designer with 12 years experience. Built the agency's visual identity."
+    personality: "Perfectionist with impossible standards. Plays favorites with team members. Frequently works through weekends and expects others to do the same."
+
+  - email: "tom@digitaledge.com"
+    name: "Tom Chen"
+    type: "persona"
+    role: "Senior Developer"
+    bio: "Full-stack developer specializing in marketing tech integrations."
+    personality: "Technically skilled but territorial. Deliberately creates complex systems only he understands. Often 'too busy' to help junior staff."
+
+  - email: "ashley@digitaledge.com"
+    name: "Ashley Williams"
+    type: "persona"
+    role: "Account Manager"
+    bio: "5 years in client services. Handles key agency accounts."
+    personality: "People-pleaser reaching burnout. Says yes to every client request. Growing resentful of unrealistic demands but afraid to push back."
+
+  - email: "jordan@digitaledge.com"
+    name: "Jordan Taylor"
+    type: "persona"
+    role: "Social Media Strategist"
+    bio: "Former influencer turned marketer. Strong content creation skills."
+    personality: "Creative but increasingly cynical. Feels undervalued and overworked. Becoming passive-aggressive in team communications."
+
+channels:
+  - name: "agency-huddle"
+    type: "public"
+    purpose: "Agency-wide updates and coordination"
+    topics:
+      - "client updates"
+      - "project status"
+      - "resource allocation"
+      - "deadlines"
+    avoid_topics:
+      - "internal conflicts"
+      - "personal matters"
+      - "compensation"
+
+  - name: "client-projects"
+    type: "public"
+    purpose: "Client project coordination"
+    topics:
+      - "deliverables"
+      - "timelines"
+      - "client feedback"
+      - "resource needs"
+    avoid_topics:
+      - "internal issues"
+      - "team conflicts"
+      - "process problems"
+
+  - name: "creative-team"
+    type: "public"
+    purpose: "Creative team collaboration"
+    topics:
+      - "design reviews"
+      - "brand guidelines"
+      - "asset creation"
+      - "creative briefs"
+    avoid_topics:
+      - "account management"
+      - "client communication"
+      - "technical issues"
+
+  - name: "tech-support"
+    type: "public"
+    purpose: "Technical implementation and support"
+    topics:
+      - "development updates"
+      - "technical issues"
+      - "platform updates"
+      - "integration needs"
+    avoid_topics:
+      - "design feedback"
+      - "client requests"
+      - "project timelines" 

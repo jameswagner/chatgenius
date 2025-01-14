@@ -18,6 +18,7 @@ class Message:
     reply_count: Optional[int] = None
     user: Optional[dict] = None
     edit_history: List[Dict] = field(default_factory=list)
+    replies: List['Message'] = field(default_factory=list)
 
     def to_dict(self):
         return {
@@ -36,5 +37,6 @@ class Message:
                         if isinstance(self.edited_at, datetime)
                         else self.edited_at),
             'isEdited': self.is_edited,
-            'editHistory': self.edit_history
+            'editHistory': self.edit_history,
+            'replies': [reply.to_dict() for reply in self.replies]
         } 

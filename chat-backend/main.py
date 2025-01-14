@@ -1,17 +1,12 @@
-from app import create_app, get_socketio
-import os
-import argparse
-
-# Set up argument parsing
-parser = argparse.ArgumentParser(description='Run the chat server')
-parser.add_argument('--port', type=int, default=5000, help='Port to run the server on')
+from app import create_app
+from app.db.ddb import DynamoDB
 
 app = create_app()
-socketio = get_socketio()
+db = DynamoDB()
 
-# This enables Flask CLI integration with SocketIO
-cli = app.cli
+print("\n=== DynamoDB Configuration ===")
+print(f"Table name: {db.table.name}")
+print("============================\n")
 
 if __name__ == '__main__':
-    args = parser.parse_args()
-    socketio.run(app, debug=True, port=args.port) 
+    app.run(debug=True) 

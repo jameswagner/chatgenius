@@ -64,29 +64,34 @@ class AuthService:
             'user_id': user.id
         }
 
-    def login(self, email: str, password: str):
-        """Login a user and return a token"""
+    def login(self, email: str, password: str = None):
+        """Login a user and return a token
+        
+        For regular users, both email and password are required.
+        For persona users, only email is required.
+        """
         logging.info(f"Attempting login for email: {email}")
         
         # Get user by email
         user = self.db.get_user_by_email(email)
         if not user:
-            # Get raw DynamoDB items for all users
-            raw_users = self.db.table.scan(
-                FilterExpression=Key('PK').begins_with('USER#')
-            )['Items']
             logging.warning(f"Login failed: No user found with email {email}")
-            logging.warning("Raw DynamoDB items for all users:")
-            for item in raw_users:
-                logging.warning(f"DDB Item: {item}")
             raise ValueError('Invalid email or password')
             
-        # Check password
-        if not check_password_hash(user.password, password):
-            logging.warning(f"Login failed: Invalid password for user {user.id}")
-            raise ValueError('Invalid email or password')
+        # Handle persona users (no password required)
+        if user.type == 'persona':
+            logging.info(f"Logging in persona user {user.id}")
+        # Handle regular users (password required)
+        else:
+            if not password:
+                logging.warning(f"Login failed: Password required for non-persona user {user.id}")
+                raise ValueError('Password is required')
+                
+            if not check_password_hash(user.password, password):
+                logging.warning(f"Login failed: Invalid password for user {user.id}")
+                raise ValueError('Invalid email or password')
             
-        logging.info(f"Password verified for user {user.id}")
+            logging.info(f"Password verified for user {user.id}")
             
         # Set user status to online
         logging.info(f"Updating status to online for user {user.id}")
@@ -96,17 +101,9 @@ class AuthService:
         token = self.create_token(user.id)
         logging.info(f"Login successful for user {user.id}")
         
-        # Log all users in system after successful login
-        all_users = self.db.get_all_users()
-        logging.info("Current users in system:")
-        for u in all_users:
-            # Handle both User objects and dictionaries
-            user_email = u.get('email') if isinstance(u, dict) else u.email
-            logging.info(f"  - {user_email}")
-        
         return {
             'token': token,
-            'user_id': user.id
+            'user': user.to_dict()
         }
 
     def logout(self, user_id: str):

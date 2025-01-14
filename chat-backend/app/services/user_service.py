@@ -209,3 +209,14 @@ class UserService(BaseService):
                 users.append(User(**self._clean_item(item)))
                 
         return users 
+
+    def get_users_by_ids(self, user_ids: List[str]) -> List[User]:
+        """Get multiple users by their IDs.
+        
+        Args:
+            user_ids: List of user IDs to retrieve
+            
+        Returns:
+            List of User objects
+        """
+        return self._batch_get_users(set(user_ids)) 

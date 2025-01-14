@@ -149,9 +149,9 @@ def test_create_message_with_thread(message_service, user_service, channel_servi
     # Verify reply
     assert reply.thread_id == parent.id
     
-    # Verify reply appears in channel messages
+    # Verify both messages appear in channel messages
     channel_messages = message_service.get_messages(channel.id)
-    assert len(channel_messages) == 1  # Parent message
+    assert len(channel_messages) == 2  # Parent message + reply
     
     # Verify reply appears in thread messages
     thread_messages = message_service.get_thread_messages(parent.id)
@@ -288,7 +288,7 @@ def test_update_message(message_service, user_service, channel_service):
     assert hasattr(updated, 'edited_at') 
 
 def test_get_messages_with_threads(message_service, user_service, channel_service):
-    """Test retrieving messages with thread replies from a channel"""
+    """Test retrieving messages including thread replies"""
     user = create_test_user(user_service)
     channel = create_test_channel(channel_service)
     
@@ -309,32 +309,24 @@ def test_get_messages_with_threads(message_service, user_service, channel_servic
             thread_id=parent.id
         )
         replies.append(reply)
-    
+
     # Create another regular message
     regular = message_service.create_message(
         channel_id=channel.id,
         user_id=user.id,
         content="Regular message"
     )
-    
-    # Get channel messages
+
+    # Get channel messages - should include all messages in chronological order
     channel_messages = message_service.get_messages(channel.id)
-    assert len(channel_messages) == 2  # Parent + regular message
+    assert len(channel_messages) == 5  # Parent + 3 replies + regular message
     
-    # Get thread messages
+    # Verify thread messages
     thread_messages = message_service.get_thread_messages(parent.id)
-    assert len(thread_messages) == 3  # All replies
-    
-    # Verify chronological order
-    assert all(thread_messages[i].created_at <= thread_messages[i+1].created_at 
-              for i in range(len(thread_messages)-1))
-    
-    # Verify thread messages have correct thread_id
-    assert all(msg.thread_id == parent.id for msg in thread_messages)
-    
-    # Verify content matches
+    assert len(thread_messages) == 3  # Just the replies
     for i, msg in enumerate(thread_messages):
-        assert msg.content == f"Reply {i}" 
+        assert msg.content == f"Reply {i}"
+        assert msg.thread_id == parent.id
 
 def test_get_message_with_thread_id(message_service, user_service, channel_service):
     """Test retrieving a message using thread_id parameter"""

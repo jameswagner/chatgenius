@@ -56,16 +56,30 @@ def ask_about_channel(channel_id):
         if not data or 'question' not in data:
             return jsonify({"error": "Question is required"}), 400
             
+        print(f"\n=== Channel QA Request ===")
+        print(f"Input channel_id/name: {channel_id}")
+            
+        # If this looks like a name rather than ID, get the channel by name
+        if not channel_id.startswith('CHANNEL#'):
+            channel = qa_service.channel_service.get_channel_by_name(channel_id)
+            if not channel:
+                print(f"❌ No channel found with name: {channel_id}")
+                return jsonify({"error": "Channel not found"}), 404
+            channel_id = channel.id
+            print(f"✓ Found channel: {channel.name} (ID: {channel_id})")
+            
         question = data['question']
+        print(f"Question: {question}")
         response = async_to_sync(qa_service.ask_about_channel)(channel_id, question)
         return jsonify(response)
         
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
     except Exception as e:
+        print(f"❌ Error: {str(e)}")
         return jsonify({"error": f"Failed to process question: {str(e)}"}), 500
 
-@bp.route('/channels/<name>/ask', methods=['POST'])
+@bp.route('/channels/name/<name>/ask', methods=['POST'])
 @cross_origin()
 def ask_about_channel_by_name(name):
     """Ask a question about a channel by its name"""
@@ -81,6 +95,24 @@ def ask_about_channel_by_name(name):
             
         question = data['question']
         response = async_to_sync(qa_service.ask_about_channel)(channel.id, question)
+        return jsonify(response)
+        
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": f"Failed to process question: {str(e)}"}), 500
+
+@bp.route('/workspaces/<workspace_id>/ask', methods=['POST'])
+@cross_origin()
+def ask_about_workspace(workspace_id):
+    """Ask a question about a workspace"""
+    try:
+        data = request.get_json()
+        if not data or 'question' not in data:
+            return jsonify({"error": "Question is required"}), 400
+            
+        question = data['question']
+        response = async_to_sync(qa_service.ask_about_workspace)(workspace_id, question)
         return jsonify(response)
         
     except ValueError as e:

@@ -26,10 +26,15 @@ class QAService:
             embedding=self.embeddings,
             index_name=self.index_name
         )
+        
+        # Initialize retriever with MMR search for better diversity
         self.retriever = self.vector_store.as_retriever(
+            search_type="mmr",
             search_kwargs={
-                "k": 100,  
-                "filter": {}  # Will be overridden in calls
+                "k": 1000,  # Increased from 200
+                "fetch_k": 1500,  # Increased from 100
+                "lambda_mult": 0.5,  # Diversity factor
+                "namespace": "messages"  # Add namespace to match where documents are stored
             }
         )
         
@@ -53,214 +58,360 @@ Context about the channel and its messages:
 Please provide a detailed answer based only on the information in the context.""",
             input_variables=["question", "context"]
         )
+        
+        self.workspace_template = PromptTemplate(
+            template="""Based on the following context about a workspace and its members, answer this question: {question}
+
+Context about the workspace channels and users:
+{context}
+
+Please provide a detailed answer based only on the information in the context.""",
+            input_variables=["question", "context"]
+        )
     
-    async def ask_about_user(self, user_id: str, question: str, include_channel_context: bool = False) -> Dict:
-        """Ask a question about a specific user
-        
-        Args:
-            user_id: The user to ask about
-            question: The question to ask
-            include_channel_context: If True, includes messages from channels where user participates
-            
-        Returns:
-            Dict with the answer and relevant context
+    async def _get_filtered_messages(self, question: str, filter_dict: dict) -> List:
+        """Get messages using a filtered retriever with semantic search"""
+        # Enhance the question to better capture the topic
+        search_query = f"""
+        Find messages related to: {question}
+        Look for:
+        - Direct mentions of these topics
+        - Related discussions
+        - Relevant context
+        - Supporting details
         """
-        # Get user's own messages from vector store
-        filter_dict = {"type": "message", "user_id": user_id}
-        user_messages = await self.retriever.ainvoke(
-            question,
-            {"filter": filter_dict}
+        
+        # Create retriever with enhanced parameters
+        filtered_retriever = self.vector_store.as_retriever(
+            search_type="mmr",
+            search_kwargs={
+                "k": 1000,  # Number of results to return
+                "fetch_k": 1500,  # Number of initial results to fetch before MMR
+                "lambda_mult": 0.7,  # Increased from 0.5 to favor relevance over diversity
+                "namespace": "messages",
+                "filter": filter_dict,
+                "score_threshold": 0.7  # Only return results with cosine similarity above this
+            }
         )
         
-        # Get user profile
-        profile_filter = {"type": "user_profile", "user_id": user_id}
-        profile_docs = await self.retriever.ainvoke(
-            "",  # Empty query to get profile
-            {"filter": profile_filter}
+        print(f"\nSearching with enhanced query for topic: {question}")
+        results = await filtered_retriever.ainvoke(search_query)
+        print(f"Found {len(results)} semantically relevant messages")
+        return results
+
+    async def _get_user_profile(self, user_id: str) -> Optional[dict]:
+        """Get a user's profile from vector store"""
+        profile_retriever = self.vector_store.as_retriever(
+            search_type="mmr",
+            search_kwargs={
+                "k": 1,
+                "namespace": "users",
+                "filter": {"type": "user_profile", "user_id": user_id}
+            }
         )
+        results = await profile_retriever.ainvoke("")
+        return results[0] if results else None
+
+    def _format_message(self, doc: dict, channel_name: str = None) -> str:
+        """Format a message with timestamp for context"""
+        timestamp = doc.metadata.get('timestamp', '')
+        if timestamp:
+            try:
+                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                timestamp = dt.strftime("at: %Y/%m/%d %H:%M")
+            except:
+                timestamp = "at: unknown time"
+        else:
+            timestamp = "at: unknown time"
+
+        # Get user name from service
+        user_id = doc.metadata.get('user_id')
+        try:
+            user = self.user_service.get_user_by_id(user_id) if user_id else None
+            user_name = user.name if user else "Unknown User"
+        except:
+            user_name = "Unknown User"
+
+        if channel_name:
+            return f"Message in {channel_name} from {user_name} {timestamp}:\n{doc.page_content}"
+        else:
+            return f"{user_name}:\n{doc.page_content}\n{timestamp}"
+
+    def _format_user_profile(self, profile_doc: dict) -> str:
+        """Format a user profile for context"""
+        return f"- {profile_doc.page_content.strip()}"
+
+    async def _get_qa_response(
+        self, 
+        question: str,
+        message_filter: dict,
+        template: PromptTemplate,
+        include_user_profiles: bool = True,
+        additional_users: set = None
+    ) -> Dict:
+        """Core QA method used by all specific QA methods"""
+        # Get messages
+        print(f"\nFetching messages with filter: {message_filter}")
+        message_docs = await self._get_filtered_messages(question, message_filter)
+        print(f"✓ Found {len(message_docs)} relevant messages")
         
+        if not message_docs:
+            return {
+                "question": question,
+                "answer": "No relevant messages found in the vector store.",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        
+        # Remove duplicates by message_id
+        seen_message_ids = set()
+        unique_messages = []
+        for doc in message_docs:
+            message_id = doc.metadata.get('message_id')
+            if message_id and message_id not in seen_message_ids:
+                seen_message_ids.add(message_id)
+                unique_messages.append(doc)
+            elif not message_id:
+                # If no message_id, use content as fallback for deduplication
+                content_hash = hash(doc.page_content)
+                if content_hash not in seen_message_ids:
+                    seen_message_ids.add(content_hash)
+                    unique_messages.append(doc)
+        
+        print(f"✓ Removed {len(message_docs) - len(unique_messages)} duplicate messages")
+        message_docs = unique_messages
+        
+        # Get unique users from messages
+        message_user_ids = set(doc.metadata.get('user_id') for doc in message_docs if doc.metadata.get('user_id'))
+        user_ids = message_user_ids | (additional_users or set())
+        print(f"\nFound {len(user_ids)} unique users")
+        
+        # Get user profiles if needed
+        user_profiles = {}
+        if include_user_profiles:
+            print("\nFetching user profiles...")
+            for user_id in user_ids:
+                profile = await self._get_user_profile(user_id)
+                if profile:
+                    print(f"✓ Found profile for {user_id}")
+                    user_profiles[user_id] = profile
+                else:
+                    print(f"✗ No profile found for {user_id}")
+        
+        # Build context
+        print("\nBuilding context...")
         context_parts = []
         
-        # Add user profile if found
-        if profile_docs:
-            context_parts.append("User Profile:")
-            context_parts.append(profile_docs[0].page_content)
+        # Create initials mapping for users
+        user_initials = {}
+        seen_initials = set()
         
-        # Add user's messages
-        context_parts.append("\nUser's Messages:")
-        for doc in user_messages:
-            context_parts.append(
-                f"Message: {doc.page_content}\n"
-                f"Timestamp: {doc.metadata.get('timestamp')}"
+        def generate_initials(name: str) -> str:
+            # Split name and get first letter of each part
+            parts = name.split()
+            if len(parts) >= 2:
+                initials = ''.join(p[0].upper() for p in parts)
+            else:
+                # If single name, use first two letters
+                initials = name[:2].upper()
+            
+            # If initials already seen, add numbers until unique
+            base_initials = initials
+            counter = 1
+            while initials in seen_initials:
+                initials = f"{base_initials}{counter}"
+                counter += 1
+            
+            seen_initials.add(initials)
+            return initials
+        
+        # Add user profiles with initials
+        if user_profiles:
+            context_parts.append("Team Members:")
+            for profile in user_profiles.values():
+                # Extract user name from profile content
+                content = profile.page_content.strip()
+                if content.startswith("Name: "):
+                    name = content.split("\n")[0].replace("Name: ", "").strip()
+                    initials = generate_initials(name)
+                    user_initials[name] = initials
+                    # Add initials to profile
+                    lines = content.split("\n")
+                    lines[0] = f"Name: {name} ({initials})"
+                    context_parts.append(f"- {chr(10).join(lines)}")
+                else:
+                    context_parts.append(self._format_user_profile(profile))
+        
+        # Group messages by channel
+        channel_messages = {}
+        for doc in message_docs:
+            channel_id = doc.metadata.get('channel_id')
+            channel_name = doc.metadata.get('channel_name', 'unknown-channel')
+            if channel_id:
+                if channel_id not in channel_messages:
+                    channel_messages[channel_id] = {
+                        'name': channel_name,
+                        'messages': []
+                    }
+                channel_messages[channel_id]['messages'].append(doc)
+
+        # Sort channels by name for consistent ordering
+        sorted_channels = sorted(channel_messages.items(), key=lambda x: x[1]['name'])
+        
+        # Add messages channel by channel
+        context_parts.append("\nChannel Messages:")
+        message_count = 0
+        total_tokens = sum(len(part.split()) for part in context_parts)
+        max_tokens = 14000
+        current_date = None
+        
+        for channel_id, channel_data in sorted_channels:
+            # Add channel header
+            channel_header = f"\n=== Messages from {channel_data['name']} ==="
+            context_parts.append(channel_header)
+            
+            # Sort messages within channel
+            sorted_messages = sorted(
+                channel_data['messages'],
+                key=lambda doc: doc.metadata.get('timestamp', ''),
+                reverse=False
             )
             
-        # Optionally get channel context
-        channel_messages = []
+            # Reset current_date for each channel
+            current_date = None
+            
+            # Add messages from this channel
+            for doc in sorted_messages:
+                # Get timestamp
+                timestamp = doc.metadata.get('timestamp', '')
+                if timestamp:
+                    try:
+                        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                        date_str = dt.strftime("%Y/%m/%d")
+                        time_str = dt.strftime("%H:%M")
+                        
+                        # If date changed or first message, include full date
+                        if date_str != current_date:
+                            current_date = date_str
+                            timestamp_str = f"on {date_str} at {time_str}"
+                        else:
+                            timestamp_str = f"at {time_str}"
+                    except:
+                        timestamp_str = "at unknown time"
+                else:
+                    timestamp_str = "at unknown time"
+                
+                # Get user name and initials
+                user_id = doc.metadata.get('user_id')
+                try:
+                    user = self.user_service.get_user_by_id(user_id) if user_id else None
+                    user_name = user.name if user else "Unknown User"
+                    # Get or generate initials
+                    if user_name not in user_initials:
+                        user_initials[user_name] = generate_initials(user_name)
+                    display_name = user_initials[user_name]
+                except:
+                    display_name = "??"
+                
+                # Format message
+                message_text = f"{display_name} {timestamp_str}:\n{doc.page_content}"
+                message_tokens = len(message_text.split()) + 10
+                
+                if total_tokens + message_tokens > max_tokens:
+                    print(f"\nReached token limit at {message_count} messages")
+                    break
+                    
+                context_parts.append(message_text)
+                total_tokens += message_tokens
+                message_count += 1
+            
+            # Break outer loop if we hit token limit
+            if total_tokens > max_tokens:
+                break
+        
+        print(f"✓ Included {message_count} messages (approx. {total_tokens} tokens)")
+        
+        # Get answer
+        context = "\n\n".join(context_parts)
+        prompt = template.format(
+            question=question,
+            context=context
+        )
+        
+        # Write prompt and context to file
+        os.makedirs("./temp", exist_ok=True)
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        filename = f"./temp/qa_prompt_{timestamp}.txt"
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write("=== QUESTION ===\n")
+            f.write(question)
+            f.write("\n\n=== CONTEXT ===\n")
+            f.write(context)
+            f.write("\n\n=== FULL PROMPT ===\n")
+            f.write(prompt)
+        print(f"\nWrote prompt and context to {filename}")
+        
+        print("\nGetting answer from LLM...")
+        response = await self.llm.ainvoke(prompt)
+        print("✓ Got response")
+        
+        return {
+            "question": question,
+            "answer": response.content,
+            "context_preview": context[:100] + "..." if len(context) > 100 else context,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    async def ask_about_channel(self, channel_id: str, question: str) -> Dict:
+        """Ask a question about a specific channel"""
+        return await self._get_qa_response(
+            question=question,
+            message_filter={"type": "message", "channel_id": channel_id},
+            template=self.channel_template
+        )
+
+    async def ask_about_workspace(self, workspace_id: str, question: str) -> Dict:
+        """Answer questions about a workspace using context from its channels and users"""
+        # Get all channels in workspace
+        print(f"\n=== Starting workspace QA for '{workspace_id}' ===")
+        channels = self.channel_service.get_workspace_channels(workspace_id)
+        if not channels:
+            raise ValueError(f"No channels found in workspace '{workspace_id}'")
+        print(f"✓ Found {len(channels)} channels")
+        
+        # Get all channel members
+        workspace_users = set()
+        for channel in channels:
+            members = self.channel_service.get_channel_members(channel.id)
+            workspace_users.update(member['id'] for member in members)
+        
+        return await self._get_qa_response(
+            question=question,
+            message_filter={
+                "type": "message",
+                "channel_id": {"$in": [c.id for c in channels]}
+            },
+            template=self.workspace_template,
+            additional_users=workspace_users
+        )
+
+    async def ask_about_user(self, user_id: str, question: str, include_channel_context: bool = False) -> Dict:
+        """Ask a question about a specific user"""
         if include_channel_context:
             # Get channels the user is a member of
             channels = self.channel_service.get_channels_for_user(user_id)
-            
-            context_parts.append("\nChannel Context:")
-            for channel in channels:
-                channel_filter = {
-                    "type": "message",
-                    "channel_id": channel.id,
-                }
-                channel_docs = await self.retriever.ainvoke(
-                    question,
-                    {"filter": channel_filter}
-                )
-                
-                if channel_docs:
-                    context_parts.append(f"\nMessages from channel {channel.name}:")
-                    for doc in channel_docs[:10]:  # Limit to 10 most relevant messages per channel
-                        if doc.metadata.get('user_id') != user_id:  # Skip user's own messages to avoid duplication
-                            context_parts.append(
-                                f"From {doc.metadata.get('user_name', 'Unknown')}:\n"
-                                f"{doc.page_content}\n"
-                                f"Timestamp: {doc.metadata.get('timestamp')}"
-                            )
-                            channel_messages.append(doc)
+            channel_ids = [channel.id for channel in channels]
+            message_filter = {
+                "$or": [
+                    {"type": "message", "user_id": user_id},
+                    {"type": "message", "channel_id": {"$in": channel_ids}}
+                ]
+            }
+        else:
+            message_filter = {"type": "message", "user_id": user_id}
         
-        # Format context for prompt
-        context_str = "\n\n".join(context_parts)
-        
-        # Generate prompt with context
-        prompt = self.user_template.format(
+        return await self._get_qa_response(
             question=question,
-            context=context_str
-        )
-        
-        # Get answer from LLM
-        response = await self.llm.ainvoke(prompt)
-        
-        return {
-            "question": question,
-            "answer": response.content,
-            "context": [
-                {
-                    "content": doc.page_content,
-                    "metadata": doc.metadata
-                }
-                for doc in (user_messages + profile_docs + channel_messages)
-            ],
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    
-    async def ask_about_channel(self, channel_id: str, question: str) -> Dict:
-        """Ask a question about a specific channel"""
-        # Get channel context from vector store
-        message_filter = {"type": "message", "channel_id": channel_id}
-        print(f"\n=== Retrieving messages for channel {channel_id} ===")
-        print(f"Filter: {message_filter}")
-        message_docs = await self.retriever.ainvoke(
-            question,
-            {"filter": message_filter}
-        )
-        print(f"Retrieved {len(message_docs)} messages")
-        
-        # Get unique user IDs from messages
-        user_ids = set(doc.metadata.get('user_id') for doc in message_docs)
-        print(f"\nFound {len(user_ids)} unique users in messages:")
-        print(f"User IDs: {user_ids}")
-        
-        # Get user profiles for all users in the conversation
-        user_profiles = {}
-        print("\nRetrieving user profiles:")
-        for user_id in user_ids:
-            profile_filter = {"type": "user_profile", "user_id": user_id}
-            print(f"\nLooking up profile for user {user_id}")
-            print(f"Filter: {profile_filter}")
-            profile_docs = await self.retriever.ainvoke(
-                "",  # Empty query to get profile
-                {"filter": profile_filter}
-            )
-            if profile_docs:
-                print(f"✓ Found profile")
-                user_profiles[user_id] = profile_docs[0]
-            else:
-                print(f"✗ No profile found")
-        
-        print(f"\nFound {len(user_profiles)} user profiles")
-        
-        # Format context for prompt, including user profiles
-        context_parts = []
-        
-        # First add user profiles
-        context_parts.append("Team Members:")
-        for user_id, profile in user_profiles.items():
-            context_parts.append(f"- {profile.page_content}")
-        
-        # Then add relevant messages
-        context_parts.append("\nConversation:")
-        message_count = 0
-        print("\nProcessing messages:")
-        for doc in message_docs:
-            user_id = doc.metadata.get('user_id')
-            user_profile = user_profiles.get(user_id)
-            print(f"\nMessage from user_id: {user_id}")
-            print(f"User profile metadata: {user_profile.metadata if user_profile else 'No profile'}")
-            print(f"User profile content: {user_profile.page_content if user_profile else 'No profile'}")
-            
-            # Get user name from profile content instead of metadata
-            if user_profile:
-                # Extract name from the profile content which should be in format "Name: {name}\nRole: ..."
-                name_line = user_profile.page_content.split('\n')[0].strip()
-                user_name = name_line.replace('Name:', '').strip()
-            else:
-                user_name = 'Unknown'
-                
-            print(f"Extracted user name: {user_name}")
-            
-            context_parts.append(
-                f"Message from {user_name}:\n"
-                f"{doc.page_content}\n"
-                f"Timestamp: {doc.metadata.get('timestamp')}"
-            )
-            message_count += 1
-        
-        print(f"\nIncluded {message_count} messages in context")
-        print(f"From {len(user_profiles)} users")
-        
-        context_str = "\n\n".join(context_parts)
-        
-        # Update channel template to better handle the structured context
-        channel_template = PromptTemplate(
-            template="""Based on the following context about a channel and its team members, answer this question: {question}
-
-{context}
-
-Please provide a detailed answer that takes into account both the team members' roles/backgrounds and their messages in the channel.
-Focus on connecting what people say with their roles and expertise when relevant.""",
-            input_variables=["question", "context"]
-        )
-        
-        # Generate prompt with enhanced context
-        prompt = channel_template.format(
-            question=question,
-            context=context_str
-        )
-        
-        print("\n=== PROMPT SENT TO LLM ===")
-        print(prompt)
-        print("=== END PROMPT ===\n")
-        
-        # Get answer from LLM
-        response = await self.llm.ainvoke(prompt)
-        
-        print("\n=== LLM RESPONSE ===")
-        print(response.content)
-        print("=== END RESPONSE ===\n")
-        
-        return {
-            "question": question,
-            "answer": response.content,
-            "context": [
-                {
-                    "content": doc.page_content,
-                    "metadata": doc.metadata
-                }
-                for doc in message_docs + list(user_profiles.values())
-            ],
-            "timestamp": datetime.utcnow().isoformat()
-        } 
+            message_filter=message_filter,
+            template=self.user_template,
+            additional_users={user_id}
+        ) 

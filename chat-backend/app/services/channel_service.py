@@ -381,24 +381,24 @@ class ChannelService(BaseService):
             Channel object if found, None otherwise
         """
         try:
-            # Query GSI1 using TYPE#public and NAME#{name}
-            response = self.table.query(
-                IndexName='GSI1',
-                KeyConditionExpression=Key('GSI1PK').eq('TYPE#public') & Key('GSI1SK').eq(f'NAME#{name}'),
-                Limit=1
-            )
+            # Try each possible channel type in sequence
+            for channel_type in ['public', 'private', 'dm']:
+                print(f"  Looking for channel {name} with type {channel_type}...")
+                response = self.table.query(
+                    IndexName='GSI1',
+                    KeyConditionExpression=Key('GSI1PK').eq(f'TYPE#{channel_type}') & 
+                                         Key('GSI1SK').eq(f'NAME#{name}'),
+                    Limit=1
+                )
+                
+                if response['Items']:
+                    item = response['Items'][0]
+                    channel = self.get_channel_by_id(item['id'])
+                    print(f"  ✓ Found channel {name} with type {channel_type}")
+                    return channel
             
-            if not response['Items']:
-                return None
-            
-            item = response['Items'][0]
-            return Channel(
-                id=item['id'],
-                name=item['name'],
-                type=item['type'],
-                created_by=item['created_by'],
-                created_at=item['created_at']
-            )
+            print(f"  ✗ Could not find channel {name} with any type")
+            return None
         except Exception as e:
             print(f"Error getting channel by name: {e}")
             return None 
@@ -437,18 +437,19 @@ class ChannelService(BaseService):
         if not channel:
             raise ValueError("Channel not found")
             
-        # Add workspace GSI4
+        # Update both workspace_id and GSI4 index
         self.table.update_item(
             Key={
                 'PK': f'CHANNEL#{channel_id}',
                 'SK': '#METADATA'
             },
-            UpdateExpression='SET GSI4PK = :workspace_pk, GSI4SK = :channel_sk',
+            UpdateExpression='SET workspace_id = :wid, GSI4PK = :workspace_pk, GSI4SK = :channel_sk',
             ExpressionAttributeValues={
+                ':wid': workspace_id,
                 ':workspace_pk': f'WORKSPACE#{workspace_id}',
                 ':channel_sk': f'CHANNEL#{channel_id}'
             }
-        ) 
+        )
 
     def find_channels_without_workspace(self) -> List[Channel]:
         """Find all channels that don't have a workspace assigned and assign them to NO_WORKSPACE.

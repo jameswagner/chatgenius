@@ -27,6 +27,13 @@ class VectorService:
             openai_api_key=os.getenv('OPENAI_API_KEY')
         )
         self.index_name = os.getenv("PINECONE_INDEX")
+        print(f"Index name: {self.index_name}")
+        
+        # Initialize Pinecone vector store
+        self.index = PineconeVectorStore(
+            embedding=self.embeddings,
+            index_name=self.index_name
+        )
         
         # Text splitter for long messages
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -36,12 +43,20 @@ class VectorService:
         
     def _prepare_message_metadata(self, message: Message, channel_name: str) -> Dict:
         """Prepare metadata for a message"""
+        # Get user for name
+        user = self.user_service.get_user_by_id(message.user_id)
+        
+        # Get channel for workspace
+        channel = self.channel_service.get_channel_by_id(message.channel_id)
+        
         metadata = {
             "type": "message",  # Identify this as a message embedding
             "message_id": message.id,
             "channel_id": message.channel_id,
             "channel_name": channel_name,
             "user_id": message.user_id,
+            "user_name": user.name if user else "Unknown User",
+            "workspace_id": channel.workspace_id if channel else "NO_WORKSPACE",
             "timestamp": message.created_at,
             "is_reply": bool(message.thread_id),
             "message_type": "thread_reply" if message.thread_id else "channel_message"
@@ -101,8 +116,10 @@ class VectorService:
             messages = filtered_messages
             print(f"After date filtering: {len(messages)} messages")
         
-        # Index each message
-        indexed_count = 0
+        # Prepare texts and metadata for batch indexing
+        texts = []
+        metadatas = []
+        
         for message in messages:
             try:
                 # Get user for metadata
@@ -112,27 +129,32 @@ class VectorService:
                     continue
                     
                 # Prepare metadata
-                metadata = self._prepare_message_metadata(message, channel)
+                metadata = self._prepare_message_metadata(message, channel.name)
                 
-                # Create embedding
-                embedding = await self.embeddings.aembed_query(message.content)
+                # Add to batch
+                texts.append(message.content)
+                metadatas.append(metadata)
                 
-                # Index in Pinecone
-                await self.index.aupdate(
-                    vectors=[(message.id, embedding, metadata)],
-                    namespace="messages"
-                )
-                
-                indexed_count += 1
-                if indexed_count % 10 == 0:
-                    print(f"Indexed {indexed_count} messages...")
-                    
             except Exception as e:
-                print(f"Error indexing message {message.id}: {str(e)}")
+                print(f"Error preparing message {message.id}: {str(e)}")
                 continue
+        
+        if not texts:
+            print("No valid messages to index")
+            return 0
             
-        print(f"Successfully indexed {indexed_count} messages from channel {channel.name}")
-        return indexed_count
+        try:
+            # Batch index in Pinecone
+            await self.index.aadd_texts(
+                texts=texts,
+                metadatas=metadatas,
+                namespace="messages"
+            )
+            print(f"Successfully indexed {len(texts)} messages from channel {channel.name}")
+            return len(texts)
+        except Exception as e:
+            print(f"Error batch indexing messages: {str(e)}")
+            return 0
         
     async def index_user(self, user_id: str) -> bool:
         """Index a user's profile information
@@ -152,18 +174,13 @@ class VectorService:
             # Create profile text
             profile_text = f"Name: {user.name}\nRole: {user.role}\nBio: {user.bio}"
             
-            # Create embedding
-            embedding = await self.embeddings.aembed_query(profile_text)
+            # Prepare metadata
+            metadata = self._prepare_user_metadata(user)
             
-            # Index in Pinecone
-            await self.index.aupdate(
-                vectors=[(user_id, embedding, {
-                    "type": "user_profile",
-                    "user_id": user_id,
-                    "name": user.name,
-                    "role": user.role,
-                    "content": profile_text
-                })],
+            # Index in Pinecone using aadd_texts
+            await self.index.aadd_texts(
+                texts=[profile_text],
+                metadatas=[metadata],
                 namespace="users"
             )
             

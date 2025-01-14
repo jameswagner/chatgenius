@@ -127,6 +127,9 @@ class MessageService(BaseService):
                 version=1
             )
             
+            # Attach user data
+            message.user = user
+            
             return message
             
         except Exception as e:
@@ -174,16 +177,17 @@ class MessageService(BaseService):
             
         return message
 
-    def get_messages(self, channel_id: str, before: str = None, limit: int = 10000) -> List[Message]:
+    def get_messages(self, channel_id: str, before: str = None, limit: int = 10000, reverse: bool = False) -> List[Message]:
         """Get messages from a channel
         
         Args:
             channel_id: The channel to get messages from
             before: Optional timestamp to get messages before
             limit: Maximum number of messages to return (default 10000)
+            reverse: If True, returns messages in reverse chronological order (newest first)
             
         Returns:
-            List of messages in chronological order
+            List of messages in chronological order (or reverse if reverse=True)
         """
         # Verify channel exists
         channel = self.channel_service.get_channel_by_id(channel_id)
@@ -193,7 +197,7 @@ class MessageService(BaseService):
         query_params = {
             'IndexName': 'GSI1',
             'KeyConditionExpression': Key('GSI1PK').eq(f'CHANNEL#{channel_id}'),
-            'ScanIndexForward': True  # Return in chronological order
+            'ScanIndexForward': not reverse  # False = newest first
         }
         
         if before:
@@ -255,7 +259,7 @@ class MessageService(BaseService):
         user_ids = set(item['user_id'] for item in response['Items'])
         users = {user.id: user for user in self.user_service._batch_get_users(user_ids)}
         
-        # Process messages
+        # Process messages and sort by timestamp
         messages = []
         for item in response['Items']:
             cleaned = self._clean_item(item)
@@ -267,6 +271,9 @@ class MessageService(BaseService):
                 message.user = users[message.user_id]
                 
             messages.append(message)
+            
+        # Sort by timestamp to ensure chronological order
+        messages.sort(key=lambda m: m.created_at)
             
         return messages
 

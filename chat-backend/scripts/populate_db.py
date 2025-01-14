@@ -11,6 +11,7 @@ import argparse
 import random
 import asyncio
 import time
+from boto3.dynamodb.conditions import Key, Attr
 
 # Add the app directory to the path so we can import our services
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -88,65 +89,176 @@ def create_users(template: Dict) -> List[Dict]:
             
     return created_users
 
-def create_channels(users: List[Dict], template: Dict) -> List[Dict]:
-    """Create channels based on template configuration"""
-    created_channels = []
+def create_channels(users: List[User], template: Dict) -> List[Channel]:
+    """Create channels from template"""
+    print(f"\nProcessing {len(template.get('channels', []))} channels...")
     
-    if not template or 'channels' not in template:
-        raise ValueError("Template must contain 'channels' configuration")
-        
-    channels_data = template['channels']
-    print(f"\nProcessing {len(channels_data)} channels...")
-
-    # Get workspace ID from template or generate one based on org name
-    workspace_id = template.get('workspace_id')
-    if not workspace_id and 'organization' in template:
-        org_name = template['organization'].get('name', '').lower().replace(' ', '_')
-        workspace_id = f"{org_name}_{uuid4().hex[:8]}"
+    # Get workspace ID from template - required field
+    workspace_id = template.get('organization', {}).get('workspace_id')
+    if not workspace_id:
+        raise ValueError("Template must specify organization.workspace_id")
     
-    print(f"Using workspace ID: {workspace_id}")
+    print(f"Using workspace ID from template: {workspace_id}")
     
-    for channel_data in channels_data:
+    # First check all channels in workspace via GSI4
+    print("\nChecking all channels in workspace via GSI4...")
+    workspace_channels = channel_service.get_workspace_channels(workspace_id)
+    print(f"Found {len(workspace_channels)} channels in workspace via GSI4:")
+    for ch in workspace_channels:
+        print(f"  - {ch.name} (id: {ch.id}, workspace_id: {ch.workspace_id})")
+    
+    # Process all channels from template
+    print("\nProcessing all channels from template...")
+    channels = []
+    for channel_config in template.get('channels', []):
         try:
-            # First try to get existing channel
-            existing_channel = channel_service.get_channel_by_name(channel_data['name'])
-            if existing_channel:
-                print(f"Found existing channel: {channel_data['name']} (id: {existing_channel.id})")
-                created_channels.append(existing_channel)
-            else:
-                # Create new channel if it doesn't exist
-                channel = channel_service.create_channel(
-                    name=channel_data['name'],
-                    type=channel_data.get('type', 'public'),
-                    created_by=users[0].id if users else None,
-                    workspace_id=workspace_id
-                )
-                print(f"Created channel: {channel.name} (id: {channel.id}) in workspace: {workspace_id}")
-                created_channels.append(channel)
+            channel = None
+            channel_name = channel_config['name']
+            channel_type = channel_config.get('type', 'public')
             
-            # Add all users to the channel (whether new or existing)
-            channel = existing_channel or channel
+            # First try to get existing channel
+            existing = channel_service.get_channel_by_name(channel_name)
+            if existing:
+                print(f"\nFound existing channel: {channel_name} (id: {existing.id})")
+                channel = existing
+            else:
+                print(f"\nAttempting to create channel: {channel_name}")
+                try:
+                    channel = channel_service.create_channel(
+                        name=channel_name,
+                        type=channel_type,
+                        workspace_id=workspace_id
+                    )
+                    print(f"  ✓ Created channel {channel.name} (id: {channel.id})")
+                except ValueError as e:
+                    if "already exists" in str(e):
+                        # Try to get channel again by name - it should work now that we fixed get_channel_by_name
+                        channel = channel_service.get_channel_by_name(channel_name)
+                        if not channel:
+                            raise ValueError(f"Could not find existing channel {channel_name}")
+                        print(f"  ✓ Found existing channel {channel.name} (id: {channel.id})")
+                    else:
+                        raise
+            
+            # Always update workspace ID
+            print(f"  Updating workspace ID to {workspace_id}")
+            channel_service.add_channel_to_workspace(channel.id, workspace_id)
+            
+            # Verify the update worked
+            updated = channel_service.get_channel_by_id(channel.id)
+            if updated.workspace_id != workspace_id:
+                print(f"  ! Warning: Failed to update workspace ID for {channel.name}")
+            else:
+                print(f"  ✓ Successfully updated workspace ID for {channel.name}")
+            
+            channels.append(updated)
+            
+            # Add all users to the channel
             print(f"\nAdding/verifying {len(users)} users in channel {channel.name}:")
             for user in users:
                 try:
                     channel_service.add_channel_member(channel.id, user.id)
-                    print(f"  ✓ Added {user.name} (id: {user.id}) to {channel.name}")
-                except Exception as e:
-                    if "already exists" in str(e):
-                        print(f"  ℹ {user.name} is already a member of {channel.name}")
-                    else:
-                        print(f"  ✗ Failed to add {user.name} to {channel.name}: {str(e)}")
-                
+                    print(f"  ✓ Added {user.name} to {channel.name}")
+                except ValueError as e:
+                    print(f"  ✗ Failed to add {user.name} to {channel.name}: {str(e)}")
+                    
         except Exception as e:
-            print(f"Error with channel {channel_data['name']}: {e}")
+            print(f"Error with channel {channel_config['name']}: {e}")
             
-    if not created_channels:
+    if not channels:
         raise ValueError("No channels were created or found")
+    
+    # Final verification
+    print("\nFinal workspace channel verification...")
+    final_workspace_channels = channel_service.get_workspace_channels(workspace_id)
+    print(f"Found {len(final_workspace_channels)} channels in workspace via GSI4:")
+    for ch in final_workspace_channels:
+        print(f"  - {ch.name} (id: {ch.id}, workspace_id: {ch.workspace_id})")
             
-    return created_channels
+    return channels
 
-def generate_conversation(channel: Dict, user_map: Dict, template: Dict, target_date: datetime) -> List[Dict]:
-    print(f"\n=== Generating conversation for {channel['name']} on {target_date.strftime('%Y-%m-%d')} ===")
+def generate_conversation(channel: Channel, users: List[User], template: Dict, target_date: datetime) -> List[Dict]:
+    print(f"\n=== Generating conversation for {channel.name} on {target_date.strftime('%Y-%m-%d')} ===")
+    
+    # Create user ID to name mapping first
+    user_map = {user.id: user for user in users}
+    
+    # Get recent messages from this channel before target date
+    recent_messages = message_service.get_messages(
+        channel_id=channel.id,
+        limit=20,  
+        reverse=True  # Get newest first
+    )
+    
+    # Filter messages that are before target_date
+    recent_messages = [
+        msg for msg in recent_messages 
+        if msg.created_at <= target_date.isoformat()
+    ]
+    
+    # Get messages from other channels in the same workspace
+    workspace_context = ""
+    if channel.workspace_id:
+        print(f"\nGetting context from other channels in workspace {channel.workspace_id}...")
+        # Get all channels in the workspace
+        workspace_channels = channel_service.get_workspace_channels(channel.workspace_id)
+        print(f"Found {len(workspace_channels)} channels in workspace")
+        for ch in workspace_channels:
+            print(f"  - {ch.name} (id: {ch.id})")
+        
+        other_channels = [c for c in workspace_channels if c.id != channel.id]
+        print(f"\nFiltered to {len(other_channels)} other channels (excluding current channel)")
+        
+        if other_channels:
+            workspace_messages = []
+            for other_channel in other_channels:
+                print(f"\nGetting messages from channel {other_channel.name}...")
+                channel_messages = message_service.get_messages(
+                    channel_id=other_channel.id,
+                    limit=10,  # Limit per channel to avoid overwhelming context
+                    reverse=True
+                )
+                # Filter for messages before target date
+                channel_messages = [
+                    msg for msg in channel_messages 
+                    if msg.created_at <= target_date.isoformat()
+                ]
+                print(f"Found {len(channel_messages)} messages before target date")
+                if channel_messages:
+                    workspace_messages.extend([
+                        (msg, other_channel.name) for msg in channel_messages
+                    ])
+            
+            if workspace_messages:
+                # Sort all workspace messages by timestamp
+                workspace_messages.sort(
+                    key=lambda x: x[0].created_at,
+                    reverse=True
+                )
+                print(f"\nTotal workspace context messages: {len(workspace_messages)}")
+                # Format workspace context
+                workspace_context = "\nRecent activity in other channels:\n" + "\n".join([
+                    f"[{channel_name}] {user_map[msg.user_id].name}: {msg.content}"
+                    for msg, channel_name in workspace_messages[:20]  # Limit total messages
+                ])
+            else:
+                print("No workspace messages found before target date")
+    
+    # Format recent messages for context
+    recent_context = ""
+    if recent_messages:
+        # Messages are in reverse order, so reverse them back for display
+        recent_messages = list(reversed(recent_messages))
+        
+        # Calculate days between most recent message and target date
+        most_recent_date = datetime.fromisoformat(recent_messages[-1].created_at)
+        days_diff = (target_date - most_recent_date).days
+        time_context = f"\nNote: The most recent message above was from {days_diff} days ago."
+        
+        recent_context = "\nRecent conversation context:\n" + "\n".join([
+            f"{user_map[msg.user_id].name}: {msg.content}"
+            for msg in recent_messages
+        ]) + time_context + workspace_context
     
     # Create user context string including personalities
     user_context = "\n".join([
@@ -157,6 +269,12 @@ def generate_conversation(channel: Dict, user_map: Dict, template: Dict, target_
     # Create date context
     date_context = f"\nDate: {target_date.strftime('%A, %B %d, %Y')}"
 
+    # Find the channel config in the template
+    channel_config = next(
+        (c for c in template.get('channels', []) if c.get('name') == channel.name),
+        template.get('channels', [{}])[0]  # Fallback to first channel if not found
+    )
+
     # Create the prompt
     prompt = f"""You are generating a Slack-style conversation between team members.{date_context}
 
@@ -166,10 +284,10 @@ Culture: {template.get('organization', {}).get('culture', 'No culture specified'
 Communication Style: {template.get('organization', {}).get('communication_style', 'Professional')}
 Current Challenges: {', '.join(template.get('organization', {}).get('challenges', []))}
     
-Channel: {channel['name']}
-Purpose: {channel.get('purpose', 'General discussion')}
-Relevant topics: {', '.join(channel.get('topics', []))}
-Topics to avoid: {', '.join(channel.get('avoid_topics', []))}
+Channel: {channel.name}
+Purpose: {channel_config.get('purpose', 'General discussion')}
+Relevant topics: {', '.join(channel_config.get('topics', []))}
+Topics to avoid: {', '.join(channel_config.get('avoid_topics', []))}{recent_context}
 
 Team members and their roles:
 {user_context}
@@ -184,6 +302,7 @@ Generate a realistic conversation between these team members that:
 7. Ends with substantive messages that provide good context for the next day
 8. Shows realistic workplace dynamics (e.g., power struggles, passive-aggressive behavior, or excessive formality, as appropriate)
 9. References the day of the week and time of year naturally in conversation where relevant
+10. If previous messages don't reflect the user or organization profile/culture, ensure that these new messages do
 
 Remember:
 - Let personality conflicts and organizational dysfunction show through naturally
@@ -202,7 +321,7 @@ Example format:
     print("\n=== OpenAI Prompt ===")
     print(prompt)
     print("\n=== End Prompt ===\n")
-
+    
     try:
         print("Sending request to OpenAI...")
         response = client.chat.completions.create(
@@ -286,7 +405,7 @@ def create_messages(channel, users, messages_data, target_date: datetime):
                 print(f"  ✗ User not found with name: {msg_data['user_name']}")
                 print(f"  Available users: {list(name_to_user.keys())}")
                 continue
-                
+            
             # Calculate message timestamp
             minutes = random.randint(2, 10)
             current_time += timedelta(minutes=minutes)
@@ -362,6 +481,42 @@ def delete_channel_messages(channel_id: str):
         print(f"    Error type: {type(e).__name__}")
         raise
 
+def delete_channel(channel: Channel):
+    """Delete a channel and all its associated data (messages, memberships, etc)"""
+    print(f"\nDeleting channel {channel.name} (id: {channel.id})...")
+    try:
+        # First delete all messages
+        delete_channel_messages(channel.id)
+        
+        # Delete channel memberships
+        print("Deleting channel memberships...")
+        response = channel_service.table.query(
+            KeyConditionExpression=Key('PK').eq(f'CHANNEL#{channel.id}') & 
+                                 Key('SK').begins_with('MEMBER#')
+        )
+        for item in response['Items']:
+            channel_service.table.delete_item(
+                Key={
+                    'PK': item['PK'],
+                    'SK': item['SK']
+                }
+            )
+        print(f"  ✓ Deleted {len(response['Items'])} channel memberships")
+        
+        # Delete channel metadata
+        print("Deleting channel metadata...")
+        channel_service.table.delete_item(
+            Key={
+                'PK': f'CHANNEL#{channel.id}',
+                'SK': '#METADATA'
+            }
+        )
+        print("  ✓ Deleted channel metadata")
+        
+    except Exception as e:
+        print(f"  ✗ Error deleting channel: {str(e)}")
+        raise
+
 async def analyze_conversations(qa_service: QAService, channels: List[Channel], users: List[User]):
     """Analyze conversations using QA service to characterize topics and users."""
     print("\n=== Conversation Analysis ===")
@@ -391,12 +546,31 @@ async def main():
     parser.add_argument('--template', required=True, help='Path to template YAML file')
     parser.add_argument('--start-date', help='Start date for messages (YYYY-MM-DD)')
     parser.add_argument('--delete-messages', action='store_true', help='Delete existing messages before creating new ones')
+    parser.add_argument('--delete-channels', action='store_true', help='Delete all channels specified in template before creating new ones')
     parser.add_argument('--num-days', type=int, default=1, help='Number of days to generate messages for (default: 1)')
     parser.add_argument('--single-channel', action='store_true', help='Only generate messages for the first channel')
     args = parser.parse_args()
     
     # Load template
     template = load_template(args.template)
+    
+    if args.delete_channels:
+        print("\n=== Deleting existing channels ===")
+        workspace_id = template.get('organization', {}).get('workspace_id')
+        if not workspace_id:
+            raise ValueError("Template must specify organization.workspace_id")
+            
+        # Get all channels in workspace
+        workspace_channels = channel_service.get_workspace_channels(workspace_id)
+        template_channel_names = {ch['name'] for ch in template.get('channels', [])}
+        
+        # Delete channels that match template names
+        for channel in workspace_channels:
+            if channel.name in template_channel_names:
+                delete_channel(channel)
+        
+        print("\nChannel deletion complete!")
+        return  # Exit after channel deletion
     
     # Create users and channels
     users = create_users(template)
@@ -441,28 +615,28 @@ async def main():
         current_date += timedelta(days=1)
     
     # Initialize services for async operations
-    vector_service = VectorService()
-    qa_service = QAService()
+    # vector_service = VectorService()
+    # qa_service = QAService()
     
-    print("\n=== Indexing Content ===")
+    # print("\n=== Indexing Content ===")
     
-    # Index all users (async)
-    for user in users:
-        print(f"Indexing user {user.name}...")
-        await vector_service.index_user(user.id)
+    # # Index all users (async)
+    # for user in users:
+    #     print(f"Indexing user {user.name}...")
+    #     await vector_service.index_user(user.id)
     
-    # Index messages from each channel (async)
-    for channel in channels:
-        print(f"Indexing channel {channel.name}...")
-        indexed_count = await vector_service.index_channel(
-            channel.id,
-            start_date=start_date,
-            end_date=end_date
-        )
-        print(f"Indexed {indexed_count} messages")
+    # # Index messages from each channel (async)
+    # for channel in channels:
+    #     print(f"Indexing channel {channel.name}...")
+    #     indexed_count = await vector_service.index_channel(
+    #         channel.id,
+    #         start_date=start_date,
+    #         end_date=end_date
+    #     )
+    #     print(f"Indexed {indexed_count} messages")
     
-    # Run conversation analysis (async)
-    await analyze_conversations(qa_service, channels, users)
+    # # Run conversation analysis (async)
+    # await analyze_conversations(qa_service, channels, users)
     
     print("\nDatabase population complete!")
     print(f"Created/verified {len(users)} users")

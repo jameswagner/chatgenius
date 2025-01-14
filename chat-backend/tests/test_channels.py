@@ -464,17 +464,20 @@ def test_get_channel_by_name_private(ddb, user_service):
     """Test retrieving a private channel by name"""
     # Create test user first
     create_test_user(user_service, "test_user", "Test User")
-    
+
     # Create a private test channel
     channel = ddb.create_channel(
         name="private-channel",
         type="private",
         created_by="test_user"
     )
-    
-    # Get channel by name should return None since we only query public channels
+
+    # Get channel by name should find the private channel
     retrieved = ddb.get_channel_by_name("private-channel")
-    assert retrieved is None 
+    assert retrieved is not None
+    assert retrieved.id == channel.id
+    assert retrieved.type == "private"
+    assert retrieved.name == "private-channel"
 
 def test_create_channel_with_workspace(ddb, user_service):
     """Test creating a channel with a specific workspace."""

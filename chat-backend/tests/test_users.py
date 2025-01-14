@@ -136,16 +136,19 @@ def test_get_persona_users(ddb):
         "regular@example.com", "Regular", "password123", type="user"
     )
     persona = ddb.create_user(
-        "persona@example.com", "Persona", "password123", type="persona"
+        "persona@example.com", "Persona", "password123", type="persona",
+        role="Assistant", bio="I help with testing"
     )
     
     # Get persona users
     personas = ddb.get_persona_users()
     
-    assert len(personas) >= 1
-    persona_ids = {user.id for user in personas}
-    assert persona.id in persona_ids
-    assert regular_user.id not in persona_ids
+    # Should only return persona users
+    assert len(personas) == 1
+    assert personas[0].id == persona.id
+    assert personas[0].type == "persona"
+    assert personas[0].role == "Assistant"
+    assert personas[0].bio == "I help with testing"
 
 def test_batch_get_users(ddb):
     """Test batch getting multiple users."""

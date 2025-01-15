@@ -168,9 +168,10 @@ def mark_channel_read(channel_id):
 @bp.route('/<channel_id>/messages')
 @auth_required
 def get_channel_messages(channel_id):
-    before = request.args.get('before')
     limit = int(request.args.get('limit', 50))
-    messages = db.get_messages(channel_id, before=before, limit=limit)
+    start_time = request.args.get('start_time')
+    end_time = request.args.get('end_time')
+    messages = db.get_messages(channel_id, limit=limit, start_time=start_time, end_time=end_time)
     if messages is None:
         return jsonify({'error': 'Failed to get messages'}), 500
     return jsonify([message.to_dict() for message in messages])

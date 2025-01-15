@@ -184,14 +184,15 @@ class MessageService(BaseService):
             
         return message
 
-    def get_messages(self, channel_id: str, before: str = None, limit: int = 10000, reverse: bool = False) -> List[Message]:
-        """Get messages from a channel
+    def get_messages(self, channel_id: str, before: str = None, limit: int = 10000, reverse: bool = False, start_time: Optional[str] = None, end_time: Optional[str] = None) -> List[Message]:
+        """Get messages from a channel with optional time range filtering
         
         Args:
             channel_id: The channel to get messages from
-            before: Optional timestamp to get messages before
             limit: Maximum number of messages to return (default 10000)
             reverse: If True, returns messages in reverse chronological order (newest first)
+            start_time: Optional start timestamp to filter messages
+            end_time: Optional end timestamp to filter messages
             
         Returns:
             List of messages in chronological order (or reverse if reverse=True)
@@ -207,11 +208,13 @@ class MessageService(BaseService):
             'ScanIndexForward': not reverse  # False = newest first
         }
         
-        if before:
-            query_params['ExclusiveStartKey'] = {
-                'GSI1PK': f'CHANNEL#{channel_id}',
-                'GSI1SK': f'TS#{before}'
-            }
+        # Add time range filtering
+        if start_time and end_time:
+            query_params['KeyConditionExpression'] &= Key('GSI1SK').between(f'TS#{start_time}', f'TS#{end_time}')
+        elif start_time:
+            query_params['KeyConditionExpression'] &= Key('GSI1SK').gte(f'TS#{start_time}')
+        elif end_time:
+            query_params['KeyConditionExpression'] &= Key('GSI1SK').lte(f'TS#{end_time}')
         
         # Query messages with pagination
         all_items = []

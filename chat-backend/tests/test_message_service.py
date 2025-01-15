@@ -480,3 +480,33 @@ def test_get_user_messages_invalid_user(message_service):
     """Test getting messages for non-existent user"""
     with pytest.raises(ValueError, match="User not found"):
         message_service.get_user_messages("nonexistent_user") 
+
+def test_get_messages_with_time_range(message_service, user_service, channel_service):
+    # Setup test data
+    user_id = "user1"
+    create_test_user(user_service, user_id=user_id)
+    channel = create_test_channel(channel_service, created_by=user_id)
+
+    # Create messages with different timestamps
+    timestamps = [
+        "2023-01-01T10:00:00Z",
+        "2023-01-01T11:00:00Z",
+        "2023-01-01T12:00:00Z",
+        "2023-01-01T13:00:00Z",
+        "2023-01-01T14:00:00Z"
+    ]
+    for ts in timestamps:
+        message_service.create_message(channel_id=channel.id, user_id=user_id, content="Test message", created_at=ts)
+
+    # Define time range
+    start_time = "2023-01-01T11:00:00Z"
+    end_time = "2023-01-01T13:00:00Z"
+
+    # Get messages within the time range
+    messages = message_service.get_messages(channel_id=channel.id, start_time=start_time, end_time=end_time)
+
+    # Verify the correct messages are returned
+    assert len(messages) == 3
+    assert messages[0].created_at == "2023-01-01T11:00:00Z"
+    assert messages[1].created_at == "2023-01-01T12:00:00Z"
+    assert messages[2].created_at == "2023-01-01T13:00:00Z" 

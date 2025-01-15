@@ -176,8 +176,8 @@ class DynamoDB:
         """Get a message by ID. If thread_id is provided, the message is retrieved as a reply in that thread."""
         return self.message_service.get_message(message_id, thread_id)
 
-    def get_messages(self, channel_id: str, before: str = None, limit: int = 50) -> List[Message]:
-        return self.message_service.get_messages(channel_id, before, limit)
+    def get_messages(self, channel_id: str, limit: int = 50, start_time: Optional[str] = None, end_time: Optional[str] = None) -> List[Message]:
+        return self.message_service.get_messages(channel_id, limit, start_time=start_time, end_time=end_time)
 
     def get_user_messages(self, user_id: str, before: str = None, limit: int = 50) -> List[Message]:
         """Get messages created by a user."""

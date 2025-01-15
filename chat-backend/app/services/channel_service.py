@@ -542,3 +542,8 @@ class ChannelService(BaseService):
             return None
         item = response['Item']
         return Workspace(id=item['id'], name=item['name'], created_at=item['created_at']) 
+
+    def get_channel_name_by_id(self, channel_id: str) -> Optional[str]:
+        """Retrieve the name of a channel given its ID."""
+        channel = self.get_channel_by_id(channel_id)
+        return channel.name if channel else None 

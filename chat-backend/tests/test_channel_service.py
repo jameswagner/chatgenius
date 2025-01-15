@@ -652,3 +652,18 @@ def test_get_workspace_channels_no_user(ddb, user_service):
     for channel in workspace_channels:
         assert channel.id in channel_ids
     assert other_channel.id not in channel_ids 
+
+def test_get_channel_name_by_id(ddb, user_service):
+    """Test retrieving a channel name by its ID."""
+    # Create a test channel
+    channel = ddb.create_channel(name="Test Channel", created_by="user1")
+    
+    # Retrieve the channel name by ID
+    channel_name = ddb.get_channel_name_by_id(channel.id)
+    
+    # Assert the channel name is correct
+    assert channel_name == "Test Channel"
+
+    # Test with a non-existent channel ID
+    non_existent_name = ddb.get_channel_name_by_id("non-existent-id")
+    assert non_existent_name is None 

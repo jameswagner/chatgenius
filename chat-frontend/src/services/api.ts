@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../config/api';
 import { AuthResponse } from '../types/auth';
-import { Message, Channel, Reaction } from '../types/chat';
+import { Message, Channel, Reaction, Workspace } from '../types/chat';
 
 // API Client
 const client = axios.create({
@@ -128,7 +128,7 @@ export const api = {
       await client.post(`/channels/${channelId}/read`);
     },
 
-    listByWorkspace: async (workspaceId?: string): Promise<{ joined: Channel[]; available: Channel[] }> => {
+    listByWorkspace: async (workspaceId?: string): Promise<Channel[] > => {
         const response = await client.get(`/channels/workspace/${workspaceId}`);
         return response.data;
       }
@@ -245,7 +245,7 @@ export const api = {
   },
 
   workspaces: {
-    list: async (): Promise<string[]> => {
+    list: async (): Promise<Workspace[]> => {
       const response = await client.get('/workspaces');
       return response.data;
     },

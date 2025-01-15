@@ -176,8 +176,8 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
 
   const fetchWorkspaces = async () => {
     try {
-      const workspaces = await api.workspaces.list();
-      setWorkspaces(workspaces.map(ws => ({ id: ws.id, name: ws.name })));
+      const workspacesData: { id: string; name: string }[] = await api.workspaces.list();
+      setWorkspaces(workspacesData.map(ws => ({ id: ws.id, name: ws.name })));
     } catch (error) {
       console.error('Failed to fetch workspaces:', error);
     }

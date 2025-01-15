@@ -40,3 +40,8 @@ export interface Channel {
   unreadCount?: number;
   isMember?: boolean;
 } 
+
+export interface Workspace {
+  id: string;
+  name: string;
+}

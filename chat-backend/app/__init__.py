@@ -14,14 +14,14 @@ def create_app():
     # Initialize CORS
     CORS(app, resources={
         r"/*": {
-            "origins": ["http://localhost:5173", "http://localhost:5174"],
+            "origins": "*",
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
         }
     })
     
     # Initialize SocketIO
-    socketio.init_app(app, cors_allowed_origins=["http://localhost:5173", "http://localhost:5174"])
+    socketio.init_app(app, cors_allowed_origins="*")
     
     # Register blueprints
     from app.routes import channels, health, auth, messages, users, uploads, search, vector, qa

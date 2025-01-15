@@ -35,6 +35,9 @@ def create_app():
     app.register_blueprint(vector.bp, url_prefix='/vector')
     app.register_blueprint(qa.bp, url_prefix='/qa')
 
+    from .routes.workspace_routes import bp as workspace_bp
+    app.register_blueprint(workspace_bp)
+
     return app
 
 def get_socketio():

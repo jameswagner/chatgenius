@@ -27,6 +27,7 @@ from boto3.dynamodb.conditions import Key, Attr
 from .base_service import BaseService
 from .user_service import UserService
 from ..models.channel import Channel
+from ..models.workspace import Workspace
 import time
 import boto3
 import os
@@ -411,26 +412,34 @@ class ChannelService(BaseService):
             print(f"Error getting channel by name: {e}")
             return None 
 
-    def get_workspace_channels(self, workspace_id: str) -> List[Channel]:
-        """Get all channels in a workspace.
+    def get_workspace_channels(self, workspace_id: str, user_id: Optional[str] = None) -> List[Channel]:
+        """Get all channels in a workspace, optionally including membership status for a specific user.
         
         Args:
             workspace_id: The ID of the workspace
+            user_id: The ID of the user (optional)
             
         Returns:
-            List of channels in the workspace
+            List of channels in the workspace, with optional membership status
         """
+        logging.info(f'Querying channels for workspace_id: {workspace_id}, user_id: {user_id}')
         response = self.table.query(
             IndexName='GSI4',
             KeyConditionExpression=Key('GSI4PK').eq(f'WORKSPACE#{workspace_id}') & 
                                  Key('GSI4SK').begins_with('CHANNEL#')
         )
         
+        
         channels = []
         for item in response['Items']:
             channel_data = self._clean_item(item)
+            channel_id = channel_data['id']
+            # Check if the user is a member of the channel, if user_id is provided
+            if user_id:
+                is_member = self.is_channel_member(channel_id, user_id)
+                channel_data['is_member'] = is_member
             channels.append(Channel(**channel_data))
-                
+        print(channels)
         return channels
 
     def add_channel_to_workspace(self, channel_id: str, workspace_id: str) -> None:
@@ -506,3 +515,30 @@ class ChannelService(BaseService):
             Number of channels updated
         """
         return len(self.find_channels_without_workspace()) 
+
+    def create_workspace(self, name: str) -> Workspace:
+        """Create a new workspace."""
+        workspace_id = self._generate_id()
+        timestamp = self._now()
+        item = {
+            'PK': f'WORKSPACE#{workspace_id}',
+            'SK': '#METADATA',
+            'id': workspace_id,
+            'name': name,
+            'created_at': timestamp
+        }
+        self.table.put_item(Item=item)
+        return Workspace(id=workspace_id, name=name, created_at=timestamp)
+
+    def get_workspace_by_id(self, workspace_id: str) -> Optional[Workspace]:
+        """Get a workspace by its ID."""
+        response = self.table.get_item(
+            Key={
+                'PK': f'WORKSPACE#{workspace_id}',
+                'SK': '#METADATA'
+            }
+        )
+        if 'Item' not in response:
+            return None
+        item = response['Item']
+        return Workspace(id=item['id'], name=item['name'], created_at=item['created_at']) 

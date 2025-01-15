@@ -11,6 +11,8 @@ from ..services.user_service import UserService
 from ..services.channel_service import ChannelService
 from ..services.message_service import MessageService
 from ..services.search_service import SearchService
+from ..services.workspace_service import WorkspaceService
+from ..models.workspace import Workspace
 import os
 
 class DynamoDB:
@@ -73,6 +75,7 @@ class DynamoDB:
         self.channel_service = ChannelService(table_name)
         self.message_service = MessageService(table_name)
         self.search_service = SearchService(table_name)
+        self.workspace_service = WorkspaceService(table_name)
         
         # Ensure general channel exists
         try:
@@ -206,7 +209,7 @@ class DynamoDB:
         """Get a user by their username."""
         return self.user_service.get_user_by_name(name)
 
-    def get_workspace_channels(self, workspace_id: str) -> List[Channel]:
+    def get_workspace_channels(self, workspace_id: str, user_id: str) -> List[Channel]:
         """Get all channels in a workspace.
         
         Args:
@@ -215,7 +218,7 @@ class DynamoDB:
         Returns:
             List of channels in the workspace
         """
-        return self.channel_service.get_workspace_channels(workspace_id)
+        return self.channel_service.get_workspace_channels(workspace_id, user_id)
 
     def find_channels_without_workspace(self) -> List[Channel]:
         """Find all channels that don't have a workspace assigned and assign them to NO_WORKSPACE.
@@ -233,3 +236,12 @@ class DynamoDB:
             workspace_id: The ID of the workspace
         """
         self.channel_service.add_channel_to_workspace(channel_id, workspace_id)
+
+    def get_all_workspaces(self) -> List[Workspace]:
+        return self.workspace_service.get_all_workspaces()
+
+    def create_workspace(self, name: str) -> Workspace:
+        return self.workspace_service.create_workspace(name)
+
+    def get_workspace_by_id(self, workspace_id: str) -> Optional[Workspace]:
+        return self.workspace_service.get_workspace_by_id(workspace_id)

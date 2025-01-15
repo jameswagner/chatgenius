@@ -19,6 +19,7 @@ file_storage = FileStorage()
 @bp.route('/')
 @auth_required
 def get_channels(trailing_slash=''):
+    print("CALLED GET CHANNELS")
     channels = db.get_channels_for_user(request.user_id)
     return jsonify([channel.to_dict() for channel in channels])
 
@@ -262,9 +263,13 @@ def handle_leave_channel(channel_id):
 @bp.route('/workspace/<workspace_id>', methods=['GET'])
 @auth_required
 def get_workspace_channels(workspace_id):
-    """Get all channels in a workspace."""
+    """Get all channels in a workspace for a specific user."""
     try:
-        channels = db.get_workspace_channels(workspace_id)
+        user_id = request.user_id  # Get the user ID from the request
+        print(f'Retrieving channels for workspace_id: {workspace_id}, user_id: {user_id}')
+        
+        channels = db.get_workspace_channels(workspace_id, user_id)  # Pass user ID to the service function
+        print(f'Retrieving channels for workspace_id: {workspace_id}, user_id: {user_id}')
         return jsonify([channel.to_dict() for channel in channels])
     except Exception as e:
-        return jsonify({'error': 'Failed to get workspace channels'}), 500 
+        return jsonify({'error': e}), 500

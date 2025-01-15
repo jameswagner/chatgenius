@@ -38,4 +38,5 @@ export interface Channel {
   createdAt?: string;
   lastRead?: string;
   unreadCount?: number;
+  isMember?: boolean;
 } 

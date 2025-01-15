@@ -41,14 +41,21 @@ def register():
 def login():
     try:
         data = request.get_json()
+        logging.info(f"Login request received for email: {data.get('email')}")
         auth_service = get_auth_service()
         result = auth_service.login(
             email=data['email'],
             password=data['password']
         )
+        logging.info(f"Login successful, response: {result}")
+        logging.debug(f"Detailed response: {result}")
         return jsonify(result)
     except ValueError as e:
+        logging.error(f"Login failed: {str(e)}")
         return jsonify({'error': str(e)}), 401
+    except Exception as e:
+        logging.error(f"Unexpected error during login: {str(e)}")
+        return jsonify({'error': 'Login failed'}), 500
 
 @bp.route('/me')
 @auth_required

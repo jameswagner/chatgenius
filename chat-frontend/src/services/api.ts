@@ -126,7 +126,12 @@ export const api = {
 
     markRead: async (channelId: string): Promise<void> => {
       await client.post(`/channels/${channelId}/read`);
-    }
+    },
+
+    listByWorkspace: async (workspaceId?: string): Promise<{ joined: Channel[]; available: Channel[] }> => {
+        const response = await client.get(`/channels/workspace/${workspaceId}`);
+        return response.data;
+      }
   },
 
   // Message operations
@@ -238,6 +243,17 @@ export const api = {
       return snakeToCamel(response.data);
     },
   },
+
+  workspaces: {
+    list: async (): Promise<string[]> => {
+      const response = await client.get('/workspaces');
+      return response.data;
+    },
+    listChannels: async (workspaceId: string): Promise<Channel[]> => {
+      const response = await client.get(`/channel/workspace/${workspaceId}`);
+      return snakeToCamel(response.data);
+    }
+  },
 };
 
 // Error handling
@@ -262,7 +278,7 @@ client.interceptors.response.use(
 // Add a response interceptor to log responses
 client.interceptors.response.use(
   response => {
-    console.log('API Response:', API_BASE_URL);
+    console.log('API Response:', response);
     return response;
   },
   error => {

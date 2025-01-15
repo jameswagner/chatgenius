@@ -23,36 +23,39 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
   const [isDMCollapsed, setIsDMCollapsed] = useState(false);
   const [isChannelsCollapsed, setIsChannelsCollapsed] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string>('NO_WORKSPACE');
+
+  console.log('Initial availableChannels:', availableChannels);
 
   const fetchChannels = useCallback(async () => {
     try {
-      const [joined, available] = await Promise.all([
-        api.channels.list(),
-        api.channels.available()
-      ]);
+      const channels = await api.channels.listByWorkspace(selectedWorkspace);
+      console.log('API Response for channels:', channels);
 
-      const dms = joined.filter(channel => channel.type === 'dm');
-      const regular = joined.filter(channel => channel.type !== 'dm' && channel.name !== 'general');
-      const general = joined.find(channel => channel.name === 'general');
+      const joined = channels.filter((channel: Channel) => channel.isMember);
+      const available = channels.filter((channel: Channel) => !channel.isMember);
+
+      setJoinedChannels(joined);
+      setAvailableChannels(available);
+      console.log('Updated availableChannels:', available);
+      console.log('Joined Channels:', joined);
+      console.log('Available Channels:', available);
+
+      const dms = joined.filter((channel: Channel) => channel.type === 'dm');
+      const regular = joined.filter((channel: Channel) => channel.type !== 'dm' && channel.name !== 'general');
+      const general = joined.find((channel: Channel) => channel.name === 'general');
 
       const sortedRegular = general 
         ? [general, ...regular.sort((a, b) => a.name.localeCompare(b.name))]
         : regular.sort((a, b) => a.name.localeCompare(b.name));
 
-      setJoinedChannels(sortedRegular);
       setDmChannels(dms);
-      setAvailableChannels(available);
-
-      if (!currentChannel && sortedRegular.length > 0) {
-        const generalChannel = sortedRegular.find(c => c.name === 'general');
-        if (generalChannel) {
-          onChannelSelect(generalChannel.id, generalChannel.name, false);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch channels:', err);
+      setJoinedChannels(sortedRegular);
+    } catch (error) {
+      console.error('Failed to fetch channels:', error);
     }
-  }, [currentChannel, onChannelSelect]);
+  }, [selectedWorkspace]);
 
   // Split into two effects - one for initial fetch and one for socket listeners
   useEffect(() => {
@@ -171,6 +174,49 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
     );
   };
 
+  const fetchWorkspaces = async () => {
+    try {
+      const workspaces = await api.workspaces.list();
+      setWorkspaces(workspaces.map(ws => ({ id: ws.id, name: ws.name })));
+    } catch (error) {
+      console.error('Failed to fetch workspaces:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchWorkspaces();
+  }, []);
+
+  useEffect(() => {
+    const fetchChannels = async () => {
+      try {
+        const channels = await api.channels.listByWorkspace(selectedWorkspace !== 'NO_WORKSPACE' ? selectedWorkspace : undefined);
+        console.log('API Response for channels:', channels);
+  
+        const joined = channels.filter((channel: Channel) => channel.isMember);
+        const available = channels.filter((channel: Channel) => !channel.isMember);
+  
+        // Update the state with the filtered channels
+        setJoinedChannels(joined);
+        setAvailableChannels(available);
+      } catch (error) {
+        console.error('Failed to fetch channels:', error);
+      }
+    };
+    fetchChannels();
+  }, [selectedWorkspace]);
+
+  const handleWorkspaceChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedWorkspace(event.target.value);
+  };
+
+  useEffect(() => {
+    console.log('Rendering availableChannels:', availableChannels);
+  }, [availableChannels]);
+
+  console.log('Workspaces before rendering:', workspaces);
+  console.log('Workspaces before rendering dropdown:', workspaces);
+
   return (
     <div className="w-64 bg-gray-800 text-white flex flex-col h-full">
       <div className="p-4 border-b border-gray-700">
@@ -178,6 +224,16 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
       </div>
 
       <div className="flex-1 overflow-y-auto">
+        {/* Workspace Selection */}
+        <div className="p-4">
+          <h2 className="font-bold mb-2">Select Workspace</h2>
+          <select title="Select Workspace" value={selectedWorkspace} onChange={handleWorkspaceChange} className="workspace-dropdown p-2 border rounded bg-gray-700 text-white">
+            {workspaces.map(workspace => (
+              <option key={workspace.id} value={workspace.id} className="bg-gray-800 text-white">{workspace.name}</option>
+            ))}
+          </select>
+        </div>
+
         {/* Direct Messages */}
         <div className="p-4">
           <div 
@@ -248,7 +304,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
           </div>
           {!isChannelsCollapsed && (
             <ul className="space-y-1">
-              {joinedChannels.map(channel => (
+              {Array.isArray(joinedChannels) && joinedChannels.map(channel => (
                 <li 
                   key={channel.id}
                   data-testid={`channel-${channel.name}`}

@@ -580,7 +580,7 @@ def test_find_channels_without_workspace(ddb, user_service):
         assert saved_channel.workspace_id == "NO_WORKSPACE"
 
 def test_get_workspace_channels(ddb, user_service):
-    """Test getting all channels in a workspace."""
+    """Test getting all channels in a workspace, including membership status."""
     # Create test user
     create_test_user(user_service, "user1", "Test User")
     
@@ -606,6 +606,44 @@ def test_get_workspace_channels(ddb, user_service):
     )
     
     # Get channels in workspace
+    channels = ddb.get_workspace_channels(workspace_id, "user1")
+    
+    # Verify only workspace channels are returned
+    assert len(channels) == 3
+    channel_ids = {c.id for c in channels}
+    for channel in workspace_channels:
+        assert channel.id in channel_ids
+        # Verify membership status
+        assert any(c.id == channel.id and c.is_member for c in channels)
+    assert other_channel.id not in channel_ids 
+
+def test_get_workspace_channels_no_user(ddb, user_service):
+    """Test getting all channels in a workspace without specifying a user."""
+    # Create test user
+    create_test_user(user_service, "user1", "Test User")
+    
+    workspace_id = "workspace1"
+    
+    # Create channels in workspace
+    workspace_channels = [
+        ddb.create_channel(
+            name=f"workspace-channel-{i}",
+            type="public",
+            created_by="user1",
+            workspace_id=workspace_id
+        )
+        for i in range(3)
+    ]
+    
+    # Create channel in different workspace
+    other_channel = ddb.create_channel(
+        name="other-workspace",
+        type="public",
+        created_by="user1",
+        workspace_id="workspace2"
+    )
+    
+    # Get channels in workspace without specifying user
     channels = ddb.get_workspace_channels(workspace_id)
     
     # Verify only workspace channels are returned

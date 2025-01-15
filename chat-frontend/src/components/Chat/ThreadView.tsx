@@ -148,7 +148,6 @@ export const ThreadView = ({ parentMessage, onClose, channelName }: ThreadViewPr
 
       <div className="p-4 border-t border-gray-200">
         <MessageInput 
-          channelId={parentMessage.channelId}
           threadId={parentMessage.id}
           onSendMessage={handleReply}
           placeholder="Reply in thread..."

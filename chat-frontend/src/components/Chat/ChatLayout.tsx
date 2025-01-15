@@ -35,7 +35,6 @@ export const ChatLayout = () => {
   const [searchResults, setSearchResults] = useState<Message[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingChannel, setIsLoadingChannel] = useState(false);
-  const [isLoadingSearchResults, setIsLoadingSearchResults] = useState(false);
   const [collapsedChannels, setCollapsedChannels] = useState<Set<string>>(new Set());
   const [channelNames, setChannelNames] = useState<{ [channelId: string]: string }>({});
   const navigate = useNavigate();
@@ -678,7 +677,6 @@ export const ChatLayout = () => {
 
             {!isSearching && (
               <MessageInput 
-                channelId={currentChannel}
                 onSendMessage={handleSendMessage}
                 currentChannelName={currentChannelName}
                 isDM={currentChannelType === 'dm'}

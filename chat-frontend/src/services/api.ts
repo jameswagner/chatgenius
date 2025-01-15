@@ -59,7 +59,7 @@ export const api = {
         email, 
         password 
       });
-      console.log(response);
+      console.log(client)
       return response.data;
     },
     logout: async (): Promise<void> => {
@@ -262,7 +262,7 @@ client.interceptors.response.use(
 // Add a response interceptor to log responses
 client.interceptors.response.use(
   response => {
-    console.log('API Response:', response);
+    console.log('API Response:', API_BASE_URL);
     return response;
   },
   error => {

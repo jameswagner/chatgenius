@@ -11,7 +11,7 @@ export interface SidebarProps {
   messages: Message[];
 }
 
-export const Sidebar = ({ currentChannel, onChannelSelect, channels, messages }: SidebarProps) => {
+export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
   const currentUserId = localStorage.getItem('userId');
   const [joinedChannels, setJoinedChannels] = useState<Channel[]>([]);
   const [availableChannels, setAvailableChannels] = useState<Channel[]>([]);
@@ -23,7 +23,6 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels, messages }:
   const [isDMCollapsed, setIsDMCollapsed] = useState(false);
   const [isChannelsCollapsed, setIsChannelsCollapsed] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [joiningChannelId, setJoiningChannelId] = useState<string | null>(null);
 
   const fetchChannels = useCallback(async () => {
     try {
@@ -89,7 +88,6 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels, messages }:
   }, [fetchChannels]);
 
   const handleJoinChannel = async (channelId: string) => {
-    setJoiningChannelId(channelId);
     try {
       await api.channels.join(channelId);
       await fetchChannels();
@@ -101,17 +99,6 @@ export const Sidebar = ({ currentChannel, onChannelSelect, channels, messages }:
       }
     } catch (err) {
       console.error('Failed to join channel:', err);
-    } finally {
-      setJoiningChannelId(null);
-    }
-  };
-
-  const handleLeaveChannel = async (channelId: string) => {
-    try {
-      await api.channels.leave(channelId);
-      await fetchChannels();
-    } catch (err) {
-      console.error('Failed to leave channel:', err);
     }
   };
 

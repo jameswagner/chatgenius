@@ -2,7 +2,6 @@ import { useState, useRef } from 'react';
 import { PaperAirplaneIcon, PaperClipIcon, DocumentIcon } from '@heroicons/react/24/outline';
 
 interface MessageInputProps {
-  channelId: string;
   onSendMessage: (content: string, files: File[], threadId?: string) => void;
   threadId?: string;
   placeholder?: string;
@@ -11,7 +10,7 @@ interface MessageInputProps {
   testId?: string;
 }
 
-export const MessageInput = ({ channelId, onSendMessage, threadId, placeholder, currentChannelName, isDM = false, testId = "message-input" }: MessageInputProps) => {
+export const MessageInput = ({ onSendMessage, threadId, placeholder, currentChannelName, isDM = false, testId = "message-input" }: MessageInputProps) => {
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [isSending, setIsSending] = useState(false);

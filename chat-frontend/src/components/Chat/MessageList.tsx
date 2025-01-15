@@ -1,10 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Message } from '../../types/chat';
-import { formatInTimeZone } from 'date-fns-tz';
-import { format } from 'date-fns';
 import { ThreadView } from './ThreadView';
 import { api } from '../../services/api';
-import { MessageReactions } from './MessageReactions';
 import { ChatMessage } from './ChatMessage';
 
 interface MessageListProps {

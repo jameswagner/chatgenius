@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthPage } from './pages/Auth';
 import { ChatLayout } from './components/Chat/ChatLayout';
 import { useEffect, useState } from 'react';
-import { healthCheck } from './services/api';
 
 // Protected Route component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {

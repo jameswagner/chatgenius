@@ -26,7 +26,8 @@ export interface Message {
   attachments: string[];
   replyCount?: number;
   user?: User;
-  replies?: Message[];
+  replies?: string[];
+  replyMessages?: Message[];
 }
 
 export interface Channel {

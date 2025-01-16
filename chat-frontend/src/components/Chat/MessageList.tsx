@@ -86,7 +86,7 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
     .filter(message => !message.threadId) // Filter out replies
     .map(message => ({
       threadId: message.id,
-      messages: [message, ...(message.replies || [])]
+      messages: [message, ...(message.replyMessages || [])]
     }));
 
   console.log('\nFinal thread groups:', threadGroups.map(group => ({
@@ -116,27 +116,16 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
   };
 
   const renderThread = (thread: ThreadGroup) => {
-    console.log('\nRendering thread:', {
-      threadId: thread.threadId,
-      messageCount: thread.messages.length,
-      messages: thread.messages.map(m => ({
-        id: m.id,
-        threadId: m.threadId,
-        content: m.content.substring(0, 20) + '...'
-      }))
-    });
+
 
     const [firstMessage, ...replies] = thread.messages;
     const isExpanded = expandedThreads.has(thread.threadId);
     const replyCount = replies.length;
 
-    console.log('Thread details:', {
-      firstMessageId: firstMessage.id,
-      replyCount,
-      isExpanded
-    });
+
 
     const replyText = replyCount === 1 ? '1 reply' : `${replyCount} replies`;
+   
 
     return (
       <div key={thread.threadId} className="mb-6">

@@ -1,18 +1,26 @@
+import re
 from typing import List, Dict, Optional, Literal
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 from .message_service import MessageService
 from .channel_service import ChannelService
+from .workspace_service import WorkspaceService
 from .user_service import UserService
+from ..models.channel import Channel
 from ..models.message import Message
+from ..models.workspace import Workspace
 from dotenv import load_dotenv
+from pinecone import Pinecone, ServerlessSpec
+
 
 # Load environment variables
 load_dotenv()
+
+MESSAGES_PER_VECTOR = 10
 
 class VectorService:
     def __init__(self, table_name: str = None):
@@ -20,6 +28,7 @@ class VectorService:
         self.message_service = MessageService(table_name)
         self.channel_service = ChannelService(table_name)
         self.user_service = UserService(table_name)
+        self.workspace_service = WorkspaceService(table_name)
         
         # Initialize embedding model with explicit API key
         self.embeddings = OpenAIEmbeddings(
@@ -27,6 +36,8 @@ class VectorService:
             openai_api_key=os.getenv('OPENAI_API_KEY')
         )
         self.index_name = os.getenv("PINECONE_INDEX")
+        self.pinecone = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+        os.environ["PINECONE_API_KEY"] = os.getenv("PINECONE_API_KEY")
         print(f"Index name: {self.index_name}")
         
         # Initialize Pinecone vector store
@@ -57,6 +68,7 @@ class VectorService:
             "user_id": message.user_id,
             "user_name": user.name if user else "Unknown User",
             "workspace_id": channel.workspace_id if channel else "NO_WORKSPACE",
+            "workspace_name": channel.workspace_name if channel else "NO_WORKSPACE",
             "timestamp": message.created_at,
             "is_reply": bool(message.thread_id),
             "message_type": "thread_reply" if message.thread_id else "channel_message"
@@ -79,83 +91,62 @@ class VectorService:
             "last_updated": datetime.utcnow().isoformat()
         }
 
-    async def index_channel(self, channel_id: str, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> int:
-        """Index all messages in a channel
+    async def index_workspace(self, workspace_id: str, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None, is_grouped: bool = False):
+        """Index all channels in a workspace"""
         
-        Args:
-            channel_id: The channel to index
-            start_date: Only index messages after this date
-            end_date: Only index messages before this date
-            
-        Returns:
-            Number of messages indexed
-        """
-        # Get channel
+        workspace_name = self.workspace_service.get_workspace_name_by_id(workspace_id)
+        print(f"Indexing workspace {workspace_name}")
+        if not workspace_name:
+            raise ValueError(f"Workspace {workspace_id} not found")
+
+        # Get all channels in the workspace
+        channels = self.channel_service.get_channels_by_workspace_id(workspace_id)
+        print(f"Found {len(channels)} channels in workspace {workspace_name}")
+        for channel in channels:
+            await self.index_channel(channel.id, start_date, end_date, is_grouped)
+
+    async def index_channel(self, channel_id: str, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None, is_grouped: bool = False) -> int:
+        """Index all messages in a channel"""
         channel = self.channel_service.get_channel_by_id(channel_id)
+        workspace = self.workspace_service.get_workspace_by_id(channel.workspace_id)
         if not channel:
             raise ValueError(f"Channel {channel_id} not found")
-        
+
+        # Convert dates to strings
+        start_time = start_date.isoformat() if start_date else None
+        if end_date:
+            end_date = end_date + timedelta(days=1) - timedelta(seconds=1)  # Set to end of the day
+        end_time = end_date.isoformat() if end_date else None
+
+        # Check if index exists, create if not
+        index_name = f"{self.index_name}-{workspace.name}".lower()
+        # replace non alphanumeric characters with '-'
+        index_name = re.sub(r'[^a-z0-9]+', '-', index_name)
+        indices = self.pinecone.list_indexes()
+        index_names = [index.name for index in indices]
+        print(f"Index names: {index_names}")
+        if index_name not in index_names:
+            print(f"Creating index {index_name}")
+            self.pinecone.create_index(index_name, dimension=3072, spec=ServerlessSpec(cloud='aws', region='us-east-1') 
+)
+            print(f"Created index {index_name}")
+
         # Get messages
-        messages = self.message_service.get_messages(channel_id)
+        messages = self.message_service.get_messages(channel_id, start_time=start_time, end_time=end_time)
         if not messages:
-            print(f"No messages found in channel {channel.name}")
             return 0
-        
-        print(f"Found {len(messages)} messages in channel {channel.name}")
-        
-        # Filter messages by date if specified
-        if start_date or end_date:
-            filtered_messages = []
-            for msg in messages:
-                msg_date = datetime.fromisoformat(msg.created_at)
-                if start_date and msg_date < start_date:
-                    continue
-                if end_date and msg_date > end_date:
-                    continue
-                filtered_messages.append(msg)
-            messages = filtered_messages
-            print(f"After date filtering: {len(messages)} messages")
-        
-        # Prepare texts and metadata for batch indexing
-        texts = []
-        metadatas = []
-        
-        for message in messages:
-            try:
-                # Get user for metadata
-                user = self.user_service.get_user_by_id(message.user_id)
-                if not user:
-                    print(f"User {message.user_id} not found for message {message.id}")
-                    continue
-                    
-                # Prepare metadata
+
+        if not is_grouped:
+            # Prepare metadata
+            for message in messages:
                 metadata = self._prepare_message_metadata(message, channel.name)
-                
-                # Add to batch
-                texts.append(message.content)
-                metadatas.append(metadata)
-                
-            except Exception as e:
-                print(f"Error preparing message {message.id}: {str(e)}")
-                continue
-        
-        if not texts:
-            print("No valid messages to index")
-            return 0
-            
-        try:
-            # Batch index in Pinecone
-            await self.index.aadd_texts(
-                texts=texts,
-                metadatas=metadatas,
-                namespace="messages"
-            )
-            print(f"Successfully indexed {len(texts)} messages from channel {channel.name}")
-            return len(texts)
-        except Exception as e:
-            print(f"Error batch indexing messages: {str(e)}")
-            return 0
-        
+                # Index message
+                self.index.upsert(index_name, message.id, message.content, metadata)
+        else:
+            await self.index_grouped_messages(channel_id, messages, index_name, workspace)
+
+        return len(messages)
+
     async def index_user(self, user_id: str) -> bool:
         """Index a user's profile information
         
@@ -275,3 +266,110 @@ class VectorService:
             "messages": messages,
             "user_id": user_id
         } 
+
+    async def index_grouped_messages(self, channel_id: str, messages: List[Message], index_name: str, workspace: Workspace) -> int:
+        """Index messages in groups based on MESSAGES_PER_VECTOR and threads"""
+        print(f"Indexing grouped messages for channel {channel_id}")
+        channel = self.channel_service.get_channel_by_id(channel_id)
+        if not channel:
+            raise ValueError(f"Channel {channel_id} not found")
+        
+        message_id_to_message = {message.id: message for message in messages}
+        index = PineconeVectorStore(
+            embedding=self.embeddings,
+            index_name=index_name
+        )
+        grouped_messages = []
+        for message in messages:
+            if message.thread_id:
+                continue # thread messages are handled separately
+            # Start a new vector if we reach the limit or encounter a thread
+            if len(grouped_messages) >= MESSAGES_PER_VECTOR or (len(grouped_messages) > 0 and message.reply_count > 0):
+                await self._store_group_vector(grouped_messages, channel, workspace, index)
+                grouped_messages = []
+
+            grouped_messages.append(message)
+
+            # Handle threads separately
+            if message.reply_count > 0:
+                for reply_id in message.replies:
+                    reply_message = message_id_to_message.get(reply_id)
+                    if reply_message:
+                        grouped_messages.append(reply_message)
+                    if len(grouped_messages) >= MESSAGES_PER_VECTOR:
+                        await self._store_group_vector(grouped_messages, channel, workspace, index, message.id)
+                        grouped_messages = []
+                if len(grouped_messages) > 0: # store the last group
+                    await self._store_group_vector(grouped_messages, channel, workspace, index, message.id)
+                    grouped_messages = []
+
+        # Store any remaining messages
+        if grouped_messages:
+            await self._store_group_vector(grouped_messages, channel, workspace, index)
+
+        return len(messages)
+
+    async def _store_group_vector(self, messages: List[Message], channel: Channel, workspace: Workspace, index: PineconeVectorStore, thread_id: Optional[str] = None):
+        """Store a group of messages as a vector"""
+        if not messages:
+            return
+
+        # Ensure created_at is a datetime object
+        for msg in messages:
+            if isinstance(msg.created_at, str):
+                msg.created_at = datetime.fromisoformat(msg.created_at)
+
+        # Prepare metadata
+        metadata = {
+            "vector_type": "thread_message" if thread_id else "grouped_message",
+            "message_count": len(messages),
+            "start_timestamp": messages[0].created_at,
+            "end_timestamp": messages[-1].created_at,
+            "thread_id": thread_id if thread_id else "",
+            "channel_id": channel.id,
+            "channel_name": channel.name,
+            "workspace_id": workspace.id,
+            "workspace_name": workspace.name,
+            "message_ids": [msg.id for msg in messages],
+            "user_ids": list(set(msg.user_id for msg in messages))
+        }
+
+        # Concatenate message contents with sender and concise timestamp
+        content = "\n".join([
+            f"[{msg.created_at.strftime('%Y-%m-%d %H:%M')}] {msg.user.name}: {msg.content}"
+            for msg in messages
+        ])
+        
+        
+        if thread_id:
+            print(f"Thread ID: {thread_id}")
+            print(f"Metadata: {metadata}")
+            print(f"Messages: {messages}")
+
+        # Index the vector
+        await index.aadd_texts([content], [metadata], namespace="grouped_messages")
+        
+
+    async def lookup_message_group_by_message_id(self, message_id: str) -> Optional[Dict]:
+        """Lookup a message group by a message ID"""
+        results = self.index.similarity_search(
+            query="",
+            filter={"message_ids": message_id},
+            k=1
+        )
+        return results[0] if results else None
+
+    async def lookup_message_group_by_user_id(self, user_id: str) -> List[Dict]:
+        """Lookup message groups by a user ID"""
+        results = self.index.similarity_search(
+            query="",
+            filter={"user_ids": user_id},
+            k=10
+        )
+        return results 
+
+    async def index_all_workspaces(self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None, is_grouped: bool = False):
+        """Index all workspaces with optional start and end dates"""
+        workspaces = self.workspace_service.get_all_workspaces()
+        for workspace in workspaces:
+            await self.index_workspace(workspace.id, start_date, end_date, is_grouped) 

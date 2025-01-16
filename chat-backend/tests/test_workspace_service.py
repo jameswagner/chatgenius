@@ -57,6 +57,26 @@ def test_get_all_workspaces(workspace_service):
     assert any(ws.name == name1 for ws in workspaces)
     assert any(ws.name == name2 for ws in workspaces)
 
+def test_get_workspace_name_by_id(workspace_service):
+    name = 'Test Workspace'
+    created_workspace = workspace_service.create_workspace(name)
+    workspace_name = workspace_service.get_workspace_name_by_id(created_workspace.id)
+    assert workspace_name == name
+
+def test_get_workspace_by_name(workspace_service):
+    # Create a workspace
+    workspace_name = "Test Workspace"
+    workspace_service.create_workspace(name=workspace_name)
+
+    # Retrieve the workspace by name
+    workspace = workspace_service.get_workspace_by_name(name=workspace_name)
+    print(f"Workspace: {workspace}")
+
+    # Assertions
+    assert workspace is not None
+    assert workspace.name == workspace_name
+    assert workspace.id is not None
+
 # Add other workspace-related tests here
 
 # Remove any channel-related tests

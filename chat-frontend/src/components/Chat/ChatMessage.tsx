@@ -223,18 +223,7 @@ export const ChatMessage = ({ message, isReply = false, onReactionChange, onThre
         />
 
         {/* Thread indicator */}
-        {message.replyCount && message.replyCount > 0 && onThreadClick && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onThreadClick();
-            }}
-            className="mt-2 flex items-center gap-1 text-sm text-blue-500 hover:text-blue-700"
-          >
-            <ChatBubbleLeftIcon className="h-4 w-4" />
-            <span>{message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}</span>
-          </button>
-        )}
+       
       </div>
     </div>
   );

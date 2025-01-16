@@ -1,17 +1,19 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Channel, Message } from '../../types/chat';
 import { api } from '../../services/api';
 import { UserSelector } from '../Chat/UserSelector';
 import { socketService } from '../../services/socket';
+import { CatchUpModal } from '../Chat/CatchUpModal';
 
 export interface SidebarProps {
   currentChannel: string;
   onChannelSelect: (channelId: string, channelName: string, isDirectMessage: boolean) => void;
   channels: Channel[];
   messages: Message[];
+  onFetchQaResponse: (response: any) => void;
 }
 
-export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
+export const Sidebar = ({ currentChannel, onChannelSelect, onFetchQaResponse }: SidebarProps) => {
   const currentUserId = localStorage.getItem('userId');
   const [joinedChannels, setJoinedChannels] = useState<Channel[]>([]);
   const [availableChannels, setAvailableChannels] = useState<Channel[]>([]);
@@ -25,37 +27,24 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
   const [isCreating, setIsCreating] = useState(false);
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [selectedWorkspace, setSelectedWorkspace] = useState<string>('NO_WORKSPACE');
+  const [showCatchUpModal, setShowCatchUpModal] = useState(false);
 
   console.log('Initial availableChannels:', availableChannels);
 
-  const fetchChannels = useCallback(async () => {
-    try {
-      const channels = await api.channels.listByWorkspace(selectedWorkspace);
-      console.log('API Response for channels:', channels);
-
-      const joined = channels.filter((channel: Channel) => channel.isMember);
-      const available = channels.filter((channel: Channel) => !channel.isMember);
-
-      setJoinedChannels(joined);
-      setAvailableChannels(available);
-      console.log('Updated availableChannels:', available);
-      console.log('Joined Channels:', joined);
-      console.log('Available Channels:', available);
-
-      const dms = joined.filter((channel: Channel) => channel.type === 'dm');
-      const regular = joined.filter((channel: Channel) => channel.type !== 'dm' && channel.name !== 'general');
-      const general = joined.find((channel: Channel) => channel.name === 'general');
-
-      const sortedRegular = general 
-        ? [general, ...regular.sort((a, b) => a.name.localeCompare(b.name))]
-        : regular.sort((a, b) => a.name.localeCompare(b.name));
-
-      setDmChannels(dms);
-      setJoinedChannels(sortedRegular);
-    } catch (error) {
-      console.error('Failed to fetch channels:', error);
+  const fetchChannels = async () => {
+    if (selectedWorkspace !== 'NO_WORKSPACE') {
+      try {
+        const channels = await api.channels.listByWorkspace(selectedWorkspace);
+        console.log('API Response for channels:', channels);
+        const joined = channels.filter((channel: Channel) => channel.isMember);
+        const available = channels.filter((channel: Channel) => !channel.isMember);
+        setJoinedChannels(joined);
+        setAvailableChannels(available);
+      } catch (error) {
+        console.error('Failed to fetch channels:', error);
+      }
     }
-  }, [selectedWorkspace]);
+  };
 
   // Split into two effects - one for initial fetch and one for socket listeners
   useEffect(() => {
@@ -177,38 +166,50 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
   const fetchWorkspaces = async () => {
     try {
       const workspacesData: { id: string; name: string }[] = await api.workspaces.list();
-      setWorkspaces(workspacesData.map(ws => ({ id: ws.id, name: ws.name })));
+      const sortedWorkspaces = workspacesData.sort((a, b) => a.name.localeCompare(b.name));
+      const noWorkspaceIndex = sortedWorkspaces.findIndex(ws => ws.name === 'NO_WORKSPACE');
+      if (noWorkspaceIndex !== -1) {
+        const [noWorkspace] = sortedWorkspaces.splice(noWorkspaceIndex, 1);
+        sortedWorkspaces.unshift(noWorkspace);
+      }
+      setWorkspaces(sortedWorkspaces);
+      const savedWorkspace = localStorage.getItem(`selectedWorkspace_${currentUserId}`);
+      if (savedWorkspace && sortedWorkspaces.some(ws => ws.id === savedWorkspace)) {
+        setSelectedWorkspace(savedWorkspace);
+      } else if (sortedWorkspaces.length > 0) {
+        setSelectedWorkspace(sortedWorkspaces[0].id);
+      }
     } catch (error) {
       console.error('Failed to fetch workspaces:', error);
     }
   };
 
-  useEffect(() => {
-    fetchWorkspaces();
-  }, []);
+  const handleWorkspaceChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const newWorkspace = event.target.value;
+    setSelectedWorkspace(newWorkspace);
+    if (currentUserId) {
+      localStorage.setItem(`selectedWorkspace_${currentUserId}`, newWorkspace);
+    }
+    fetchChannels();
+  };
 
   useEffect(() => {
-    const fetchChannels = async () => {
-      try {
-        const channels = await api.channels.listByWorkspace(selectedWorkspace !== 'NO_WORKSPACE' ? selectedWorkspace : undefined);
-        console.log('API Response for channels:', channels);
-  
-        const joined = channels.filter((channel: Channel) => channel.isMember);
-        const available = channels.filter((channel: Channel) => !channel.isMember);
-  
-        // Update the state with the filtered channels
-        setJoinedChannels(joined);
-        setAvailableChannels(available);
-      } catch (error) {
-        console.error('Failed to fetch channels:', error);
+    if (currentUserId) {
+      const savedWorkspace = localStorage.getItem(`selectedWorkspace_${currentUserId}`);
+      if (savedWorkspace) {
+        setSelectedWorkspace(savedWorkspace);
+      } else {
+        setSelectedWorkspace('NO_WORKSPACE');
       }
-    };
+    }
+    fetchWorkspaces().then(() => {
+      fetchChannels();
+    });
+  }, [currentUserId]);
+
+  useEffect(() => {
     fetchChannels();
   }, [selectedWorkspace]);
-
-  const handleWorkspaceChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedWorkspace(event.target.value);
-  };
 
   useEffect(() => {
     console.log('Rendering availableChannels:', availableChannels);
@@ -216,6 +217,11 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
 
   console.log('Workspaces before rendering:', workspaces);
   console.log('Workspaces before rendering dropdown:', workspaces);
+
+  const handleChannelSelect = (selectedChannels: string[]) => {
+    console.log('Selected channels:', selectedChannels);
+    // Implement further logic as needed
+  };
 
   return (
     <div className="w-64 bg-gray-800 text-white flex flex-col h-full">
@@ -349,6 +355,16 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
             </ul>
           </div>
         )}
+
+        <div className="p-4">
+          <button
+            onClick={() => setShowCatchUpModal(true)}
+            className="text-sm text-white bg-blue-500 hover:bg-blue-600 rounded px-4 py-2"
+            disabled={joinedChannels.length === 0}
+          >
+            Catch up
+          </button>
+        </div>
       </div>
 
       {/* Keep modals outside the scrollable area */}
@@ -397,6 +413,15 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
         <UserSelector
           onClose={() => setShowUserSelector(false)}
           onUserSelect={handleStartDM}
+        />
+      )}
+
+      {showCatchUpModal && (
+        <CatchUpModal
+          onClose={() => setShowCatchUpModal(false)}
+          channels={joinedChannels}
+          onChannelSelect={handleChannelSelect}
+          onFetchQaResponse={onFetchQaResponse}
         />
       )}
     </div>

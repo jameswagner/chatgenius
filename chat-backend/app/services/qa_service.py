@@ -2,6 +2,7 @@ from typing import Dict, List, Optional
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.prompts import PromptTemplate
 from langchain_pinecone import PineconeVectorStore
+from langchain_core.documents import Document
 import os
 from datetime import datetime
 import tiktoken
@@ -33,7 +34,7 @@ class QAService:
         # Initialize vector store
         self.vector_store = PineconeVectorStore(
             embedding=self.embeddings,
-            index_name=self.index_name
+            index_name='rag-project-new-nutritech-workspace'
         )
         
         # Initialize retriever with MMR search for better diversity
@@ -43,7 +44,7 @@ class QAService:
                 "k": 1000,  # Increased from 200
                 "fetch_k": 1500,  # Increased from 100
                 "lambda_mult": 0.5,  # Diversity factor
-                "namespace": "messages"  # Add namespace to match where documents are stored
+                "namespace": "grouped_messages"  # Add namespace to match where documents are stored
             }
         )
         
@@ -100,10 +101,10 @@ Please provide a detailed answer based only on the information in the context.""
         filtered_retriever = self.vector_store.as_retriever(
             search_type="mmr",
             search_kwargs={
-                "k": 1000,  # Number of results to return
-                "fetch_k": 1500,  # Number of initial results to fetch before MMR
+                "k": 10,  # Number of results to return
+                "fetch_k": 100,  # Number of initial results to fetch before MMR
                 "lambda_mult": 0.7,  # Increased from 0.5 to favor relevance over diversity
-                "namespace": "messages",
+                "namespace": "grouped_messages",
                 "filter": filter_dict,
                 "score_threshold": 0.7  # Only return results with cosine similarity above this
             }
@@ -292,11 +293,15 @@ Please provide a detailed answer based only on the information in the context.""
         print(f"✓ Removed {len(message_docs) - len(unique_messages)} duplicate messages")
         return unique_messages
 
-    def _convert_to_message(self, doc: dict) -> Message:
+    def _convert_to_message(self, doc: Document ) -> Message:
         """Convert a document from the vector DB to a Message object."""
+
+        #print class of doc
+        print(f"Doc class: {type(doc)}")
+        
         return Message(
-            id=doc.get('message_id'),
-            content=doc.get('page_content'),
+            id=doc.metadata.get('message_id'),
+            content=doc.page_content,
             created_at=doc.metadata.get('timestamp'),
             user_id=doc.metadata.get('user_id'),
             channel_id=doc.metadata.get('channel_id')
@@ -313,6 +318,7 @@ Please provide a detailed answer based only on the information in the context.""
         """Retrieve messages from DDB for given channel IDs."""
         message_docs = []
         for channel_id in channel_ids:
+            print(f"Getting messages for channel {channel_id}")
             messages = self.message_service.get_messages(channel_id)
             message_docs.extend(messages)
         print(f"✓ Retrieved {len(message_docs)} messages from DDB")
@@ -357,7 +363,7 @@ Please provide a detailed answer based only on the information in the context.""
             if(len(responses) > 1):
                 context_parts_before_messages = context_parts_before_messages[:-1] # Remove the last response from the context
             if(len(responses) > 0):               
-                context_parts_before_messages.append(f"Here is the answer based on the previous messages. Please take this into account when answering the next question: {responses[-1]}")
+                context_parts_before_messages.append(f"Here is the answer based on the previous messages. Please build up upon this answer: {responses[-1]}")
             context_parts, start_channel, start_message = await self._add_message_channels_to_context(context_parts_before_messages, sorted_channels, user_initials, template, question, start_channel, start_message)
             context = "\n\n".join(context_parts)
             prompt = template.format(question=question, context=context)
@@ -365,8 +371,8 @@ Please provide a detailed answer based only on the information in the context.""
             os.makedirs("./temp", exist_ok=True)
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
             filename = f"./temp/qa_prompt_{timestamp}.txt"
+                
             
-            print(f"\nWrote prompt and context to {filename}")
             print("\nGetting answer from LLM...")
             response = await self.llm.ainvoke(prompt)
             print("✓ Got response")
@@ -379,6 +385,7 @@ Please provide a detailed answer based only on the information in the context.""
                 f.write(response.content)
             responses.append(response.content)
             context_parts = ["Previous Response:", response.content] + context_parts
+            print(f"\nWrote prompt and context to {filename}")
             if start_channel is None:
                 break
         return {
@@ -392,7 +399,7 @@ Please provide a detailed answer based only on the information in the context.""
         """Ask a question about a specific channel"""
         return await self._get_qa_response(
             question=question,
-            message_filter={"type": "message", "channel_id": channel_id},
+            message_filter={ "channel_id": {"$in": [channel_id]}},
             template=self.channel_template,
             get_all=get_all
         )
@@ -415,7 +422,6 @@ Please provide a detailed answer based only on the information in the context.""
         return await self._get_qa_response(
             question=question,
             message_filter={
-                "type": "message",
                 "channel_id": {"$in": [c.id for c in channels]}
             },
             template=self.workspace_template,

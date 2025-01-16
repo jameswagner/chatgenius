@@ -145,6 +145,11 @@ export const api = {
       console.log('Raw message data from backend:', response.data);
       const transformed = snakeToCamel(response.data);
       console.log('Transformed message data:', transformed);
+      for (const message of transformed) {
+        if (message.replies) {
+          message.replyMessages = transformed.filter((m: Message) => message.replies.includes(m.id));
+        }
+      }
       return transformed;
     },
 
@@ -254,6 +259,16 @@ export const api = {
       return snakeToCamel(response.data);
     }
   },
+
+  qa: {
+    askAboutChannel: async (channelId: string): Promise<any> => {
+      const response = await client.post(`/qa/channels/${channelId}/ask`, {
+        question: "Please summarize the contents of this channel",
+        get_all: true
+      });
+      return response.data;
+    }
+  }
 };
 
 // Error handling

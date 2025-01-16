@@ -37,6 +37,7 @@ export const ChatLayout = () => {
   const [isLoadingChannel, setIsLoadingChannel] = useState(false);
   const [collapsedChannels, setCollapsedChannels] = useState<Set<string>>(new Set());
   const [channelNames, setChannelNames] = useState<{ [channelId: string]: string }>({});
+  const [qaResponse, setQaResponse] = useState<string>('');
   const navigate = useNavigate();
 
   // Cache for user data
@@ -132,11 +133,12 @@ export const ChatLayout = () => {
           setMessages(prev => {
             // If it's a reply, find the parent message and add to its replies
             if (message.threadId) {
+              const fullReplyMessage = messages.find(msg => msg.id === message.id);
               return prev.map(m => {
                 if (m.id === message.threadId) {
                   return {
                     ...m,
-                    replies: [...(m.replies || []), message]
+                    replies: [...(m.replies || []), message.id]
                   };
                 }
                 return m;
@@ -148,9 +150,9 @@ export const ChatLayout = () => {
 
           // Only mark as read if it's our own message or we're viewing it
           if (isOwnMessage) {
-            console.log('Own message, no need to mark as read');
+            
           } else {
-            console.log('Other user message in current channel, marking as read');
+            
             api.channels.markRead(message.channelId)
               .then(() => {
                 console.log('Channel marked as read:', message.channelId);
@@ -429,6 +431,15 @@ export const ChatLayout = () => {
     });
   }, [messages]);
 
+  const handleFetchQaResponse = async (channelId: string) => {
+    try {
+      const response = await api.qa.askAboutChannel(channelId);
+      setQaResponse(response);
+    } catch (error) {
+      console.error('Failed to fetch QA response:', error);
+    }
+  };
+
   return (
     <div className="flex h-screen">
       <Sidebar 
@@ -436,6 +447,7 @@ export const ChatLayout = () => {
         onChannelSelect={handleChannelSelect}
         channels={channels}
         messages={messages}
+        onFetchQaResponse={handleFetchQaResponse}
       />
       <div className="flex-1 flex flex-col">
         <div className="p-4 border-b flex items-center bg-white">
@@ -686,6 +698,13 @@ export const ChatLayout = () => {
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-500">
             Select a channel to start chatting
+          </div>
+        )}
+
+        {qaResponse && (
+          <div className="qa-response p-4 bg-gray-100 border-t">
+            <h3 className="font-bold text-lg mb-2">Channel Summary</h3>
+            <p>{qaResponse}</p>
           </div>
         )}
       </div>

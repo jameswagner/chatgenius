@@ -26,6 +26,7 @@ import logging
 from boto3.dynamodb.conditions import Key, Attr
 from .base_service import BaseService
 from .user_service import UserService
+from .workspace_service import WorkspaceService
 from ..models.channel import Channel
 from ..models.workspace import Workspace
 import time
@@ -36,6 +37,7 @@ class ChannelService(BaseService):
     def __init__(self, table_name: str = None):
         super().__init__(table_name)
         self.user_service = UserService(table_name)
+        self.workspace_service = WorkspaceService(table_name)
         self.dynamodb = boto3.resource(
             'dynamodb',
             aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
@@ -530,20 +532,12 @@ class ChannelService(BaseService):
         self.table.put_item(Item=item)
         return Workspace(id=workspace_id, name=name, created_at=timestamp)
 
-    def get_workspace_by_id(self, workspace_id: str) -> Optional[Workspace]:
-        """Get a workspace by its ID."""
-        response = self.table.get_item(
-            Key={
-                'PK': f'WORKSPACE#{workspace_id}',
-                'SK': '#METADATA'
-            }
-        )
-        if 'Item' not in response:
-            return None
-        item = response['Item']
-        return Workspace(id=item['id'], name=item['name'], created_at=item['created_at']) 
-
     def get_channel_name_by_id(self, channel_id: str) -> Optional[str]:
         """Retrieve the name of a channel given its ID."""
         channel = self.get_channel_by_id(channel_id)
         return channel.name if channel else None 
+    
+    def get_workspace_by_channel_id(self, channel_id: str) -> Optional[Workspace]:
+        """Retrieve the workspace of a channel given its ID."""
+        channel = self.get_channel_by_id(channel_id)
+        return self.workspace_service.get_workspace_by_id(channel.workspace_id) if channel else None 

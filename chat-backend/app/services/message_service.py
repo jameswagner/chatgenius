@@ -184,7 +184,7 @@ class MessageService(BaseService):
             
         return message
 
-    def get_messages(self, channel_id: str, before: str = None, limit: int = 10000, reverse: bool = False, start_time: Optional[str] = None, end_time: Optional[str] = None) -> List[Message]:
+    def get_messages(self, channel_id: str, limit: int = 10000, reverse: bool = False, start_time: Optional[str] = None, end_time: Optional[str] = None) -> List[Message]:
         """Get messages from a channel with optional time range filtering
         
         Args:
@@ -240,6 +240,7 @@ class MessageService(BaseService):
         for item in all_items[:limit]:  # Apply limit here
             cleaned = self._clean_item(item)
             cleaned['reactions'] = item.get('reactions', {})
+
             message = Message(**cleaned)
             
             # Add user data
@@ -247,7 +248,29 @@ class MessageService(BaseService):
                 message.user = users[message.user_id]
                 
             messages.append(message)
+            
+             
+    
+        # Set thread_id to message_id for all messages
         
+        
+        # Add replies to messages
+        messages = self._add_replies_to_messages(messages)
+        
+        return messages
+    
+    def _add_replies_to_messages(self, messages: List[Message]) -> List[Message]:
+        """Add replies to messages"""
+        #message id to message map
+        message_map = {message.id: message for message in messages}
+        
+        for message in messages:
+            if message.thread_id:
+                parent_message = message_map.get(message.thread_id)
+                if parent_message:
+                    parent_message.replies.append(message.id)
+                    parent_message.reply_count = len(parent_message.replies)
+                    #print(f"Added reply to parent message {message.thread_id}: {message.id}")
         return messages
 
     def get_thread_messages(self, thread_id: str) -> List[Message]:

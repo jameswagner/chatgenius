@@ -9,10 +9,9 @@ export interface SidebarProps {
   onChannelSelect: (channelId: string, channelName: string, isDirectMessage: boolean) => void;
   channels: Channel[];
   messages: Message[];
-  onFetchQaResponse: (response: any) => void;
 }
 
-export const Sidebar = ({ currentChannel, onChannelSelect, onFetchQaResponse }: SidebarProps) => {
+export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
   const currentUserId = localStorage.getItem('userId');
   const [joinedChannels, setJoinedChannels] = useState<Channel[]>([]);
   const [availableChannels, setAvailableChannels] = useState<Channel[]>([]);
@@ -218,10 +217,6 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onFetchQaResponse }: 
   console.log('Workspaces before rendering:', workspaces);
   console.log('Workspaces before rendering dropdown:', workspaces);
 
-  const handleChannelSelect = (selectedChannels: string[]) => {
-    console.log('Selected channels:', selectedChannels);
-    // Implement further logic as needed
-  };
 
   const handleAskQuestion = async () => {
     if (!botChannel) {

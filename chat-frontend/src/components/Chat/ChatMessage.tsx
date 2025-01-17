@@ -1,5 +1,5 @@
 import { Message as MessageType } from '../../types/chat';
-import { DocumentIcon, ChatBubbleLeftIcon, PencilIcon } from '@heroicons/react/24/outline';
+import { DocumentIcon, PencilIcon } from '@heroicons/react/24/outline';
 import { MessageReactions } from './MessageReactions';
 import { API_BASE_URL } from '../../config/api';
 import { formatMessageTimestamp } from '../../utils/dateUtils';
@@ -17,12 +17,11 @@ interface ChatMessageProps {
   message: MessageType;
   isReply?: boolean;
   onReactionChange: () => void;
-  onThreadClick?: () => void;
   isHighlighted?: boolean;
   onClick?: () => void;
 }
 
-export const ChatMessage = ({ message, isReply = false, onReactionChange, onThreadClick, isHighlighted = false, onClick }: ChatMessageProps) => {
+export const ChatMessage = ({ message, isReply = false, onReactionChange, isHighlighted = false, onClick }: ChatMessageProps) => {
   const currentUserId = localStorage.getItem('userId');
   const isCurrentUser = message.userId === currentUserId;
   const [isEditing, setIsEditing] = useState(false);
@@ -224,19 +223,6 @@ export const ChatMessage = ({ message, isReply = false, onReactionChange, onThre
           message={message}
           onReactionChange={onReactionChange}
         />
-
-        {message.replyCount && message.replyCount > 0 && onThreadClick && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onThreadClick();
-            }}
-            className="mt-2 flex items-center gap-1 text-sm text-blue-500 hover:text-blue-700"
-          >
-            <ChatBubbleLeftIcon className="h-4 w-4" />
-            <span>{message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}</span>
-          </button>
-        )}
        
       </div>
     </div>

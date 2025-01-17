@@ -73,13 +73,7 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
     });
   };
 
-  // Group messages by thread
-  console.log('\nStarting message grouping with:', messages.map(m => ({
-    id: m.id,
-    threadId: m.threadId,
-    replyCount: m.replies?.length,
-    content: m.content.substring(0, 20) + '...'
-  })));
+
 
   // Only include parent messages (those without a threadId) in the main list
   const threadGroups = messages
@@ -88,17 +82,6 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
       threadId: message.id,
       messages: [message, ...(message.replyMessages || [])]
     }));
-
-  console.log('\nFinal thread groups:', threadGroups.map(group => ({
-    threadId: group.threadId,
-    messageCount: group.messages.length,
-    replyCount: group.messages.length - 1,
-    messages: group.messages.map(m => ({
-      id: m.id,
-      threadId: m.threadId,
-      content: m.content.substring(0, 20) + '...'
-    }))
-  })));
 
   const renderMessage = (message: Message, isReply = false) => {
     return (
@@ -110,7 +93,6 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
           const updatedMessages = await api.messages.list(channelId);
           setMessages(updatedMessages);
         }}
-        onThreadClick={onThreadClick ? () => onThreadClick(message.id) : undefined}
       />
     );
   };

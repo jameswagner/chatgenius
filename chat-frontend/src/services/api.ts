@@ -269,7 +269,17 @@ export const api = {
       });
       return response.data;
     }
-  }
+  },
+
+  async createBotChannel(workspaceId: string): Promise<Channel> {
+    const response = await client.post('/channels/bot', { workspace_id: workspaceId });
+    return snakeToCamel(response.data);
+  },
+
+  async getBotChannel(workspaceId: string): Promise<Channel | null> {
+    const response = await client.get('/channels/bot', { params: { workspace_id: workspaceId } });
+    return response.data ? snakeToCamel(response.data) : null;
+  },
 };
 
 // Error handling

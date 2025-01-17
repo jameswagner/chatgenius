@@ -655,6 +655,9 @@ def test_get_workspace_channels_no_user(ddb, user_service):
 
 def test_get_channel_name_by_id(ddb, user_service):
     """Test retrieving a channel name by its ID."""
+    user_id = "user1"
+    create_test_user(user_service, user_id, "Test User")
+
     # Create a test channel
     channel = ddb.create_channel(name="Test Channel", created_by="user1")
     
@@ -667,3 +670,34 @@ def test_get_channel_name_by_id(ddb, user_service):
     # Test with a non-existent channel ID
     non_existent_name = ddb.get_channel_name_by_id("non-existent-id")
     assert non_existent_name is None 
+
+def test_create_bot_channel(ddb, user_service):
+    user_id = "user123"
+    workspace_id = "workspace456"
+    # Create a test user
+    create_test_user(user_service, user_id, "Test User")
+    # Create a bot user with a unique email
+    user_service.create_bot_user(email=f"{user_id}+bot@test.com", name="Bot")
+    # Create a bot channel
+    bot_channel = ddb.create_bot_channel(user_id, workspace_id)
+    assert bot_channel is not None
+    assert bot_channel.name == f"bot-{user_id}-{workspace_id}"
+    assert bot_channel.type == "bot"
+
+
+def test_get_bot_channel(ddb, user_service):
+    user_id = "user123"
+    workspace_id = "workspace456"
+    # Create a test user
+    create_test_user(user_service, user_id, "Test User")
+    # Create a bot user with a unique email
+    user_service.create_bot_user(email=f"{user_id}+bot@test.com", name="Bot")
+    bot_user = user_service.get_bot_user("bot")
+    print(bot_user)
+    
+    # Create a bot channel
+    ddb.create_bot_channel(user_id, workspace_id)
+    # Retrieve the bot channel
+    bot_channel = ddb.get_bot_channel(user_id, workspace_id)
+    assert bot_channel is not None
+    assert bot_channel.name == f"bot-{user_id}-{workspace_id}"

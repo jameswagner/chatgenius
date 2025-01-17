@@ -223,6 +223,7 @@ export const ChatLayout = () => {
       const fetchMessages = async () => {
         try {
           const data = await api.messages.list(currentChannel);
+
           if (Array.isArray(data)) {
             setMessages(data);
           }
@@ -261,8 +262,8 @@ export const ChatLayout = () => {
     };
   }, []);
 
-  const handleChannelSelect = async (channelId: string, channelName: string, isDirectMessage: boolean) => {
-    console.log('Selecting channel:', { channelId, channelName, isDirectMessage });
+  const handleChannelSelect = async (channelId: string, channelName: string, isDirectMessage: boolean, isBot: boolean = false) => {
+    console.log('Selecting channel:', { channelId, channelName, isDirectMessage, isBot });
     setIsLoadingChannel(true);
     try {
       // Mark previous channel as read before switching
@@ -274,11 +275,11 @@ export const ChatLayout = () => {
       // Store channel info
       localStorage.setItem('currentChannel', channelId);
       localStorage.setItem('currentChannelName', channelName);
-      localStorage.setItem('currentChannelType', isDirectMessage ? 'dm' : 'public');
+      localStorage.setItem('currentChannelType', isDirectMessage ? 'dm' : isBot ? 'bot' : 'public');
       
       setCurrentChannel(channelId);
       setCurrentChannelName(channelName);
-      setCurrentChannelType(isDirectMessage ? 'dm' : 'public');
+      setCurrentChannelType(isDirectMessage ? 'dm' : isBot ? 'bot' : 'public');
       
       // Load messages
       const messages = await api.messages.list(channelId);
@@ -443,7 +444,7 @@ export const ChatLayout = () => {
           <div className="w-48">
             {currentChannel && (
               <h2 className="font-bold text-lg">
-                {currentChannelType === 'dm' ? currentChannelName : `#${currentChannelName}`}
+                {currentChannelType === 'dm' ? currentChannelName : currentChannelType === 'bot' ? 'Ask our chatbot' : `#${currentChannelName}`}
               </h2>
             )}
           </div>
@@ -681,6 +682,7 @@ export const ChatLayout = () => {
                 onSendMessage={handleSendMessage}
                 currentChannelName={currentChannelName}
                 isDM={currentChannelType === 'dm'}
+                isBot={currentChannelType === 'bot'}
               />
             )}
           </>

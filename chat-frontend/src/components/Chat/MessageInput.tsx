@@ -8,9 +8,11 @@ interface MessageInputProps {
   currentChannelName: string;
   isDM?: boolean;
   testId?: string;
+  isBot?: boolean;
 }
 
-export const MessageInput = ({ onSendMessage, threadId, placeholder, currentChannelName, isDM = false, testId = "message-input" }: MessageInputProps) => {
+export const MessageInput = ({ onSendMessage, threadId, placeholder, currentChannelName, isDM = false, isBot = false, testId = "message-input" }: MessageInputProps) => {
+  
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -76,7 +78,7 @@ export const MessageInput = ({ onSendMessage, threadId, placeholder, currentChan
           type="text"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          placeholder={placeholder || `Message ${isDM ? '' : '#'}${currentChannelName}`}
+          placeholder={isBot ? 'Ask our chatbot' : placeholder || `Message ${isDM ? '' : '#'}${currentChannelName}`}
           className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:border-blue-500"
           data-testid={testId}
           onKeyDown={(e) => {

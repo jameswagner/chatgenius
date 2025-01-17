@@ -112,7 +112,7 @@ class ChannelService(BaseService):
             self.add_channel_member(channel_id, other_user_id)
             
         if type == 'bot':
-            bot_user = self.user_service.get_bot_user("bot")
+            bot_user = self.user_service.get_bot_user("Bot")
             self.add_channel_member(channel_id, bot_user.id)
             
         # Get channel with members
@@ -397,8 +397,8 @@ class ChannelService(BaseService):
         """
         try:
             # Try each possible channel type in sequence
-            for channel_type in ['public', 'private', 'dm']:
-                print(f"  Looking for channel {name} with type {channel_type}...")
+            for channel_type in ['public', 'private', 'dm', 'bot']:
+                
                 response = self.table.query(
                     IndexName='GSI1',
                     KeyConditionExpression=Key('GSI1PK').eq(f'TYPE#{channel_type}') & 
@@ -546,3 +546,13 @@ class ChannelService(BaseService):
         """Retrieve the workspace of a channel given its ID."""
         channel = self.get_channel_by_id(channel_id)
         return self.workspace_service.get_workspace_by_id(channel.workspace_id) if channel else None 
+
+    def create_bot_channel(self, user_id: str, workspace_id: str) -> Channel:
+        """Create a bot channel for a user in a workspace."""
+        name = f"bot-{user_id}-{workspace_id}"
+        return self.create_channel(name=name, type='bot', created_by=user_id, workspace_id=workspace_id)
+
+    def get_bot_channel(self, user_id: str, workspace_id: str) -> Optional[Channel]:
+        """Retrieve a bot channel by user_id and workspace_id."""
+        name = f"bot-{user_id}-{workspace_id}"
+        return self.get_channel_by_name(name)

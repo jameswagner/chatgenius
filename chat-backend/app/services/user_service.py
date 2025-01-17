@@ -24,23 +24,23 @@ class UserService(BaseService):
             region_name=os.getenv('AWS_REGION')
         )
         
-    def create_bot_user(self, email: str, name: str) -> User:
+    def create_bot_user(self, email: str, name: str = "Bot") -> User:
         """Create a new bot user"""
         # check if a user of type bot exists
         response = self.table.query(
             IndexName='GSI1',
-            KeyConditionExpression=Key('GSI1PK').eq('TYPE#bot') & Key('GSI1SK').eq('NAME#Bot')
+            KeyConditionExpression=Key('GSI1PK').eq('TYPE#bot') & Key('GSI1SK').eq(f'NAME#{name}')
         )
         if response['Items']:
             return User(**self._clean_item(response['Items'][0]))
         
         return self.create_user(email, name, type='bot')
     
-    def get_bot_user(self, name: str) -> User:
+    def get_bot_user(self, name: str = "Bot") -> User:
         """Get a bot user by their username."""
         response = self.table.query(
             IndexName='GSI1',
-            KeyConditionExpression=Key('GSI1PK').eq('TYPE#bot')
+            KeyConditionExpression=Key('GSI1PK').eq('TYPE#bot') & Key('GSI1SK').eq(f'NAME#{name}')
         )
         return User(**self._clean_item(response['Items'][0])) if response['Items'] else None
 

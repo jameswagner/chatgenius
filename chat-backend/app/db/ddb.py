@@ -246,6 +246,14 @@ class DynamoDB:
     def get_workspace_by_id(self, workspace_id: str) -> Optional[Workspace]:
         return self.workspace_service.get_workspace_by_id(workspace_id)
 
+    def create_bot_channel(self, user_id: str, workspace_id: str) -> Channel:
+        """Create a bot channel for a user in a workspace."""
+        return self.channel_service.create_bot_channel(user_id, workspace_id)
+
+    def get_bot_channel(self, user_id: str, workspace_id: str) -> Optional[Channel]:
+        """Retrieve a bot channel by user_id and workspace_id."""
+        return self.channel_service.get_bot_channel(user_id, workspace_id)
+
 # Workspace Schema Explanation:
 # Workspaces are managed with the following key structure in DynamoDB:
 # - PK: 'WORKSPACE#<workspace_id>'

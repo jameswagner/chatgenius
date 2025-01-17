@@ -293,3 +293,25 @@ def get_workspace_channels(workspace_id):
         return jsonify([channel.to_dict() for channel in channels])
     except Exception as e:
         return jsonify({'error': e}), 500
+
+@bp.route('/bot', methods=['POST'])
+@auth_required
+def create_bot_channel():
+    user_id = request.user_id
+    data = request.get_json()
+    workspace_id = data.get('workspace_id')
+    if not workspace_id:
+        return jsonify({'error': 'Workspace ID is required'}), 400
+    bot_channel = db.create_bot_channel(user_id, workspace_id)
+    return jsonify(bot_channel.to_dict()), 201
+
+
+@bp.route('/bot', methods=['GET'])
+@auth_required
+def get_bot_channel():
+    user_id = request.user_id
+    workspace_id = request.args.get('workspace_id')
+    if not workspace_id:
+        return jsonify({'error': 'Workspace ID is required'}), 400
+    bot_channel = db.get_bot_channel(user_id, workspace_id)
+    return jsonify(bot_channel.to_dict() if bot_channel else None)

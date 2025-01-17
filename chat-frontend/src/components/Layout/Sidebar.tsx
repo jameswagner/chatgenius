@@ -6,7 +6,7 @@ import { socketService } from '../../services/socket';
 
 export interface SidebarProps {
   currentChannel: string;
-  onChannelSelect: (channelId: string, channelName: string, isDirectMessage: boolean) => void;
+  onChannelSelect: (channelId: string, channelName: string, isDirectMessage: boolean, isBot: boolean) => void;
   channels: Channel[];
   messages: Message[];
 }
@@ -85,7 +85,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
       const channel = availableChannels.find(c => c.id === channelId);
       if (channel) {
         // Automatically select the joined channel
-        onChannelSelect(channelId, channel.name, false);
+        onChannelSelect(channelId, channel.name, false, false);
       }
     } catch (err) {
       console.error('Failed to join channel:', err);
@@ -103,7 +103,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
       setNewChannelName('');
       await fetchChannels();
       // Automatically select the new channel
-      onChannelSelect(channel.id, channel.name, false);
+      onChannelSelect(channel.id, channel.name, false, false);
     } catch (err: any) {
       setError(err.message || 'Failed to create channel');
     } finally {
@@ -122,7 +122,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
       });
       console.log('Created channel:', channel); // Debug log
       await fetchChannels();
-      onChannelSelect(channel.id, userName, true);
+      onChannelSelect(channel.id, userName, true, false);
       setShowUserSelector(false);
     } catch (err) {
       console.error('Failed to create DM:', err);
@@ -219,20 +219,24 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
 
 
   const handleAskQuestion = async () => {
-    if (!botChannel) {
-      try {
-        const newBotChannel = await api.channels.create({
-          name: "bot-" + currentUserId + "-" + selectedWorkspace,
-          type: 'bot',
-          workspaceId: selectedWorkspace
-        });
-        setBotChannel(newBotChannel);
-        onChannelSelect(newBotChannel.id, newBotChannel.name, false);
-      } catch (error) {
-        console.error('Failed to create bot channel:', error);
+    if (!selectedWorkspace) {
+      setError('Please select a workspace.');
+      return;
+    }
+
+    try {
+      let botChannel = await api.getBotChannel(selectedWorkspace);
+
+      if (!botChannel) {
+        botChannel = await api.createBotChannel(selectedWorkspace);
       }
-    } else {
-      onChannelSelect(botChannel.id, botChannel.name, false);
+
+      if (botChannel) {
+        onChannelSelect(botChannel.id, botChannel.name, false, true);
+      }
+    } catch (error) {
+      console.error('Error handling ask question:', error);
+      setError('Failed to handle ask question.');
     }
   };
 
@@ -246,18 +250,11 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
         {/* Workspace Selection */}
         <div className="p-4">
           <h2 className="font-bold mb-2">Select Workspace</h2>
-          <select title="Select Workspace" value={selectedWorkspace} onChange={handleWorkspaceChange} className="workspace-dropdown p-2 border rounded bg-gray-700 text-white">
+          <select title="Select Workspace" value={selectedWorkspace} onChange={handleWorkspaceChange} className="workspace-dropdown p-2 border rounded bg-gray-700 text-white w-full">
             {workspaces.map(workspace => (
               <option key={workspace.id} value={workspace.id} className="bg-gray-800 text-white">{workspace.name}</option>
             ))}
           </select>
-        </div>
-
-        {/* Ask a Question Button */}
-        <div className="p-4">
-          <button className="ask-question-button bg-blue-500 text-white rounded px-4 py-2 hover:bg-blue-600" onClick={handleAskQuestion}>
-            Ask a Question
-          </button>
         </div>
 
         {/* Direct Messages */}
@@ -291,7 +288,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
                   className={`p-2 rounded cursor-pointer flex items-center justify-between ${
                     channel.id === currentChannel ? 'bg-gray-700' : 'hover:bg-gray-700'
                   }`}
-                  onClick={() => onChannelSelect(channel.id, formatDMChannelName(channel), true)}
+                  onClick={() => onChannelSelect(channel.id, formatDMChannelName(channel), true, false)}
                 >
                   <div className="flex items-center gap-2">
                     <span>{formatDMChannelName(channel)}</span>
@@ -337,7 +334,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
                   className={`p-2 rounded cursor-pointer flex items-center justify-between ${
                     channel.id === currentChannel ? 'bg-gray-700' : 'hover:bg-gray-700'
                   }`}
-                  onClick={() => onChannelSelect(channel.id, channel.name, false)}
+                  onClick={() => onChannelSelect(channel.id, channel.name, false, false)}
                 >
                   <div className="flex items-center gap-2">
                     {renderChannelName(channel)}
@@ -353,28 +350,25 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
 
         {/* Available Channels */}
         {availableChannels.length > 0 && (
-          <div className="p-4 border-t border-gray-700">
+          <div className="p-4">
             <h2 className="font-bold mb-2">Available Channels</h2>
             <ul className="space-y-1">
               {availableChannels.map(channel => (
-                <li 
-                  key={channel.id}
-                  data-testid={`channel-${channel.name}`}
-                  className="p-2 rounded hover:bg-gray-700 cursor-pointer flex justify-between items-center"
-                >
-                  #{channel.name}
-                  <button
-                    data-testid={`join-channel-button-${channel.id}`}
-                    onClick={() => handleJoinChannel(channel.id)}
-                    className="text-sm text-blue-400 hover:text-blue-300"
-                  >
-                    Join
-                  </button>
+                <li key={channel.id} className="p-2 rounded cursor-pointer flex items-center justify-between hover:bg-gray-700">
+                  <span>#{channel.name}</span>
+                  <button onClick={() => handleJoinChannel(channel.id)} className="text-blue-400 hover:text-blue-300">Join</button>
                 </li>
               ))}
             </ul>
           </div>
         )}
+
+        {/* Ask a Question Button */}
+        <div className="p-4">
+          <button className="ask-question-button bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded px-4 py-2 hover:from-blue-600 hover:to-indigo-600 shadow-lg transform hover:scale-105 transition-transform duration-200" onClick={handleAskQuestion}>
+            Ask a Question
+          </button>
+        </div>
 
       </div>
 

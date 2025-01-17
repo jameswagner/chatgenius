@@ -3,7 +3,6 @@ import { Channel, Message } from '../../types/chat';
 import { api } from '../../services/api';
 import { UserSelector } from '../Chat/UserSelector';
 import { socketService } from '../../services/socket';
-import { CatchUpModal } from '../Chat/CatchUpModal';
 
 export interface SidebarProps {
   currentChannel: string;
@@ -27,7 +26,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onFetchQaResponse }: 
   const [isCreating, setIsCreating] = useState(false);
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [selectedWorkspace, setSelectedWorkspace] = useState<string>('NO_WORKSPACE');
-  const [showCatchUpModal, setShowCatchUpModal] = useState(false);
+  const [botChannel, setBotChannel] = useState<Channel | null>(null);
 
   console.log('Initial availableChannels:', availableChannels);
 
@@ -100,7 +99,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onFetchQaResponse }: 
     setIsCreating(true);
     
     try {
-      const channel = await api.channels.create({ name: newChannelName });
+      const channel = await api.channels.create({ name: newChannelName, workspaceId: selectedWorkspace });
       setShowCreateChannel(false);
       setNewChannelName('');
       await fetchChannels();
@@ -118,6 +117,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onFetchQaResponse }: 
       console.log('Starting DM with type: dm'); // Debug log
       const channel = await api.channels.create({
         name: `dm-${crypto.randomUUID()}`,
+        workspaceId: selectedWorkspace,
         type: 'dm',  // Make sure this is being set
         otherUserId: userId
       });
@@ -223,6 +223,24 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onFetchQaResponse }: 
     // Implement further logic as needed
   };
 
+  const handleAskQuestion = async () => {
+    if (!botChannel) {
+      try {
+        const newBotChannel = await api.channels.create({
+          name: "bot-" + currentUserId + "-" + selectedWorkspace,
+          type: 'bot',
+          workspaceId: selectedWorkspace
+        });
+        setBotChannel(newBotChannel);
+        onChannelSelect(newBotChannel.id, newBotChannel.name, false);
+      } catch (error) {
+        console.error('Failed to create bot channel:', error);
+      }
+    } else {
+      onChannelSelect(botChannel.id, botChannel.name, false);
+    }
+  };
+
   return (
     <div className="w-64 bg-gray-800 text-white flex flex-col h-full">
       <div className="p-4 border-b border-gray-700">
@@ -238,6 +256,13 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onFetchQaResponse }: 
               <option key={workspace.id} value={workspace.id} className="bg-gray-800 text-white">{workspace.name}</option>
             ))}
           </select>
+        </div>
+
+        {/* Ask a Question Button */}
+        <div className="p-4">
+          <button className="ask-question-button bg-blue-500 text-white rounded px-4 py-2 hover:bg-blue-600" onClick={handleAskQuestion}>
+            Ask a Question
+          </button>
         </div>
 
         {/* Direct Messages */}
@@ -356,15 +381,6 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onFetchQaResponse }: 
           </div>
         )}
 
-        <div className="p-4">
-          <button
-            onClick={() => setShowCatchUpModal(true)}
-            className="text-sm text-white bg-blue-500 hover:bg-blue-600 rounded px-4 py-2"
-            disabled={joinedChannels.length === 0}
-          >
-            Catch up
-          </button>
-        </div>
       </div>
 
       {/* Keep modals outside the scrollable area */}
@@ -416,14 +432,6 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onFetchQaResponse }: 
         />
       )}
 
-      {showCatchUpModal && (
-        <CatchUpModal
-          onClose={() => setShowCatchUpModal(false)}
-          channels={joinedChannels}
-          onChannelSelect={handleChannelSelect}
-          onFetchQaResponse={onFetchQaResponse}
-        />
-      )}
     </div>
   );
 }; 

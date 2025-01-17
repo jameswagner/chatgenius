@@ -134,8 +134,8 @@ class DynamoDB:
     def _batch_get_users(self, user_ids: Set[str]) -> List[User]:
         return self.user_service._batch_get_users(user_ids)
     
-    def create_channel(self, name: str, type: str = 'public', created_by: str = None, other_user_id: str = None) -> Channel:
-        return self.channel_service.create_channel(name, type, created_by, other_user_id)
+    def create_channel(self, name: str, type: str = 'public', created_by: str = None, other_user_id: str = None, workspace_id: str = None) -> Channel:
+        return self.channel_service.create_channel(name, type, created_by, other_user_id, workspace_id)
 
     def add_channel_member(self, channel_id: str, user_id: str) -> None:
         return self.channel_service.add_channel_member(channel_id, user_id)
@@ -245,3 +245,11 @@ class DynamoDB:
 
     def get_workspace_by_id(self, workspace_id: str) -> Optional[Workspace]:
         return self.workspace_service.get_workspace_by_id(workspace_id)
+
+# Workspace Schema Explanation:
+# Workspaces are managed with the following key structure in DynamoDB:
+# - PK: 'WORKSPACE#<workspace_id>'
+# - SK: '#METADATA'
+# - GSI2PK: 'WORKSPACE_NAME#<workspace_name>'
+#
+# This setup allows for efficient querying by both workspace ID and name, supporting operations like creation, retrieval, and listing of workspaces.

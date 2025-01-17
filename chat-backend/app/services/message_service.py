@@ -111,15 +111,19 @@ class MessageService(BaseService):
             if content:
                 words = set(content.lower().split())
                 for word in words:
-                    word_item = {
-                        'PK': f'WORD#{word}',
-                        'SK': f'MESSAGE#{message_id}',
-                        'GSI3PK': f'CONTENT#{word}',
-                        'GSI3SK': f'TS#{timestamp}',
-                        'message_id': message_id,
-                        'channel_id': channel_id
-                    }
-                    self.table.put_item(Item=word_item)
+                    self.table.update_item(
+                        Key={
+                            'PK': f'WORD#{word}',
+                            'SK': '#METADATA'
+                        },
+                        UpdateExpression="SET messages = list_append(if_not_exists(messages, :empty_list), :new_message), GSI3PK = :gsi3pk, GSI3SK = :gsi3sk",
+                        ExpressionAttributeValues={
+                            ':new_message': [f'{message_id}#{thread_id}' if thread_id else message_id],
+                            ':empty_list': [],
+                            ':gsi3pk': f'CONTENT#{word}',
+                            ':gsi3sk': '#METADATA'
+                        }
+                    )
                 
             message = Message(
                 id=message_id,

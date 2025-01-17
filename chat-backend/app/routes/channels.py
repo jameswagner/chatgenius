@@ -9,11 +9,15 @@ import os
 from datetime import datetime, timezone
 import uuid
 import logging
+from ..services.qa_service import QAService
+import asyncio
+
 
 bp = Blueprint('channels', __name__)
 db = DynamoDB(table_name=os.environ.get('DYNAMODB_TABLE', 'chat_app_jrw'))
 socketio = get_socketio()
 file_storage = FileStorage()
+qa_service = QAService()
 
 @bp.route('', defaults={'trailing_slash': ''})
 @bp.route('/')
@@ -49,6 +53,8 @@ def create_channel(trailing_slash=''):
             other_user_id=data.get('otherUserId'),
             workspace_id=data.get('workspaceId', 'NO_WORKSPACE')  # Default to NO_WORKSPACE if not specified
         )
+        
+        
         
         # Only emit for non-DM channels
         # For DMs, we'll emit when the first message is sent
@@ -172,6 +178,8 @@ def get_channel_messages(channel_id):
     start_time = request.args.get('start_time')
     end_time = request.args.get('end_time')
     messages = db.get_messages(channel_id, limit=limit, start_time=start_time, end_time=end_time)
+    for message in messages[:15]:
+        print(f"Message: {message.to_dict()}")
     if messages is None:
         return jsonify({'error': 'Failed to get messages'}), 500
     return jsonify([message.to_dict() for message in messages])
@@ -236,12 +244,23 @@ def create_message(channel_id):
                 # Get channel with members for proper name display
                 channel.members = db.get_channel_members(channel_id)
                 socketio.emit('channel.new', channel.to_dict())
-        
+                
         socketio.emit('message.new', message_data, room=channel_id)
+                
+        if channel and channel.type == 'bot':
+            workspace_id = channel.workspace_id
+            # Run the async function in the event loop
+            asyncio.run(handle_bot_message(content, workspace_id, channel_id))
+            
         return jsonify(message_data)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+async def handle_bot_message(content, workspace_id, channel_id):
+    answer = await qa_service.answer_bot_message(content, workspace_id, channel_id)
+    print("Answer obtained from bot: ", answer)
+    socketio.emit('message.new', answer.to_dict(), room=channel_id)
 
 @bp.route('/uploads/<filename>')
 def serve_file(filename):

@@ -10,8 +10,14 @@ from openai import OpenAI
 import argparse
 import random
 import asyncio
-import time
-from boto3.dynamodb.conditions import Key, Attr
+
+from app.services.user_service import UserService
+from app.services.channel_service import ChannelService
+from app.services.message_service import MessageService
+from app.services.workspace_service import WorkspaceService
+from boto3.dynamodb.conditions import Key
+
+THREAD_PROBABILITY = 0.35
 
 # Add the app directory to the path so we can import our services
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -24,21 +30,16 @@ client = OpenAI(
     api_key=os.getenv('OPENAI_API_KEY')
 )
 
-from app.services.user_service import UserService
-from app.services.channel_service import ChannelService
-from app.services.message_service import MessageService
-from app.services.vector_service import VectorService
-from app.services.qa_service import QAService
+
+
 from app.models.user import User
 from app.models.channel import Channel
-from app.models.message import Message
 
 # Initialize services
 user_service = UserService()
 channel_service = ChannelService()
 message_service = MessageService()
-vector_service = VectorService()
-qa_service = QAService()
+workspace_service = WorkspaceService()
 
 print("\n=== Database Configuration ===")
 print(f"DYNAMODB_TABLE env var: {os.getenv('DYNAMODB_TABLE')}")
@@ -93,19 +94,31 @@ def create_channels(users: List[User], template: Dict) -> List[Channel]:
     """Create channels from template"""
     print(f"\nProcessing {len(template.get('channels', []))} channels...")
     
-    # Get workspace ID from template - required field
-    workspace_id = template.get('organization', {}).get('workspace_id')
-    if not workspace_id:
+    # Get workspace name from template - required field
+    workspace_name= template.get('organization', {}).get('workspace_name')
+    if not workspace_name:
         raise ValueError("Template must specify organization.workspace_id")
     
-    print(f"Using workspace ID from template: {workspace_id}")
+    print(f"Using workspace ID from template: {workspace_name}")
     
-    # First check all channels in workspace via GSI4
-    print("\nChecking all channels in workspace via GSI4...")
+    workspace = workspace_service.get_workspace_by_name(workspace_name)
+    if not workspace:
+        print(f"Creating workspace {workspace_name}")
+        workspace = workspace_service.create_workspace(
+            name=workspace_name
+        )
+    
+    if not workspace:
+        raise ValueError(f"Failed to create or retrieve workspace {workspace_name}")
+    
+    workspace_id = workspace.id
+
     workspace_channels = channel_service.get_workspace_channels(workspace_id)
     print(f"Found {len(workspace_channels)} channels in workspace via GSI4:")
     for ch in workspace_channels:
         print(f"  - {ch.name} (id: {ch.id}, workspace_id: {ch.workspace_id})")
+        
+   
     
     # Process all channels from template
     print("\nProcessing all channels from template...")
@@ -215,14 +228,15 @@ def generate_conversation(channel: Channel, users: List[User], template: Dict, t
                 print(f"\nGetting messages from channel {other_channel.name}...")
                 channel_messages = message_service.get_messages(
                     channel_id=other_channel.id,
-                    limit=10,  # Limit per channel to avoid overwhelming context
-                    reverse=True
+                    start_time=target_date - timedelta(days=7),
+                    end_time=target_date + timedelta(days=1),
+
                 )
                 # Filter for messages before target date
                 channel_messages = [
                     msg for msg in channel_messages 
                     if msg.created_at <= target_date.isoformat()
-                ]
+                ][-10:]
                 print(f"Found {len(channel_messages)} messages before target date")
                 if channel_messages:
                     workspace_messages.extend([
@@ -231,10 +245,7 @@ def generate_conversation(channel: Channel, users: List[User], template: Dict, t
             
             if workspace_messages:
                 # Sort all workspace messages by timestamp
-                workspace_messages.sort(
-                    key=lambda x: x[0].created_at,
-                    reverse=True
-                )
+
                 print(f"\nTotal workspace context messages: {len(workspace_messages)}")
                 # Format workspace context
                 workspace_context = "\nRecent activity in other channels:\n" + "\n".join([
@@ -246,7 +257,7 @@ def generate_conversation(channel: Channel, users: List[User], template: Dict, t
     
     # Format recent messages for context
     recent_context = ""
-    if recent_messages:
+    if recent_messages or workspace_context:
         # Messages are in reverse order, so reverse them back for display
         recent_messages = list(reversed(recent_messages))
         
@@ -267,7 +278,7 @@ def generate_conversation(channel: Channel, users: List[User], template: Dict, t
     ])
 
     # Create date context
-    date_context = f"\nDate: {target_date.strftime('%A, %B %d, %Y')}"
+    date_context = f"\n{target_date.strftime('%A, %B %d, %Y')}"
 
     # Find the channel config in the template
     channel_config = next(
@@ -275,48 +286,74 @@ def generate_conversation(channel: Channel, users: List[User], template: Dict, t
         template.get('channels', [{}])[0]  # Fallback to first channel if not found
     )
 
-    # Create the prompt
-    prompt = f"""You are generating a Slack-style conversation between team members.{date_context}
+    # Generate a random number
+    random_number = random.random()
 
-Organization Context:
-{template.get('organization', {}).get('description', 'No org context provided')}
-Culture: {template.get('organization', {}).get('culture', 'No culture specified')}
-Communication Style: {template.get('organization', {}).get('communication_style', 'Professional')}
-Current Challenges: {', '.join(template.get('organization', {}).get('challenges', []))}
+    # Base prompt
+    prompt = f"""
+    You are generating a Slack-style conversation between team members.
+
+    Organization Context:
+    {template.get('organization', {}).get('description', 'No org context provided')}
+    Culture: {template.get('organization', {}).get('culture', 'No culture specified')}
+    Communication Style: {template.get('organization', {}).get('communication_style', 'Professional')}
+    Current Challenges: {', '.join(template.get('organization', {}).get('challenges', []))}
     
-Channel: {channel.name}
-Purpose: {channel_config.get('purpose', 'General discussion')}
-Relevant topics: {', '.join(channel_config.get('topics', []))}
-Topics to avoid: {', '.join(channel_config.get('avoid_topics', []))}{recent_context}
+    Channel: {channel.name}
+    Purpose: {channel_config.get('purpose', 'General discussion')}
+    Relevant topics: {', '.join(channel_config.get('topics', []))}
+    Topics to avoid: {', '.join(channel_config.get('avoid_topics', []))}{recent_context}
 
-Team members and their roles:
-{user_context}
+    Team members and their roles:
+    {user_context}
+    The date is {date_context}
 
-Generate a realistic conversation between these team members that:
-1. Strongly reflects the organization's culture and communication style
-2. Shows interpersonal dynamics and underlying tensions where they exist
-3. Demonstrates each person's role, expertise, AND personality traits (especially negative ones)
-4. Uses appropriate tone for the org culture (can be unprofessional/toxic if that matches the culture)
-5. Includes 25-30 messages with meaningful content
-6. Avoids generic pleasantries and empty responses
-7. Ends with substantive messages that provide good context for the next day
-8. Shows realistic workplace dynamics (e.g., power struggles, passive-aggressive behavior, or excessive formality, as appropriate)
-9. References the day of the week and time of year naturally in conversation where relevant
-10. If previous messages don't reflect the user or organization profile/culture, ensure that these new messages do
+    Generate a realistic conversation between these team members that:
+    1. Strongly reflects the organization's culture and communication style
+    2. Shows interpersonal dynamics and underlying tensions where they exist
+    3. Demonstrates each person's role, expertise, AND personality traits (especially negative ones)
+    4. Uses appropriate tone for the org culture (can be unprofessional/toxic if that matches the culture)
+    5. Includes 25-30 messages with meaningful content
+    6. Avoids generic pleasantries and empty responses
+    7. Ends with substantive messages that provide good context for the next day
+    8. Shows realistic workplace dynamics (e.g., power struggles, passive-aggressive behavior, or excessive formality, as appropriate)
+    9. References the day of the week and time of year naturally in conversation where relevant
+    10. If previous messages don't reflect the user or organization profile/culture, ensure that these new messages do
 
-Remember:
-- Let personality conflicts and organizational dysfunction show through naturally
-- Unless it is specifically a non-work channel, keep the conversation grounded in actual work while showing interpersonal dynamics
+    Remember:
+    - Let personality conflicts and organizational dysfunction show through naturally
+    - Unless it is specifically a non-work channel, keep the conversation grounded in actual work while showing interpersonal dynamics
+    """
 
-IMPORTANT: Format each message as a JSON array of objects, with each object having exactly these fields:
-{{"user_name": "Name", "content": "Message content"}}
+    # Conditionally add thread instruction
+    if random_number < THREAD_PROBABILITY:
+        prompt += "\nPlease include at least one thread in the returned set of messages. Ensure the messages with the same thread id follow a logical sequence on a particular subject" 
 
-Example format:
-[
-  {{"user_name": "John Smith", "content": "Good morning team!"}},
-  {{"user_name": "Jane Doe", "content": "Morning John, I've got the report ready."}}
-]
-"""
+        # Add the format instructions for threads
+        prompt += """
+        IMPORTANT: Format each message as a JSON array of objects, with each object having exactly these fields:
+        {"user_name": "Name", "content": "Message content", "thread_id": "Optional thread ID if part of a thread"}
+
+        Example format with threads:
+        [
+        {"user_name": "John Smith", "content": "Good morning team!"},
+        {"user_name": "Jane Doe", "content": "Morning John, I've got the report ready."},
+        {"user_name": "John Smith", "content": "Who wants to go to lunch?", "thread_id": "1"},
+        {"user_name": "Jane Doe", "content": "I do!", "thread_id": "1"}
+        ]
+        """
+    else:
+        # Add the format instructions without threads
+        prompt += """
+        IMPORTANT: Format each message as a JSON array of objects, with each object having exactly these fields:
+        {"user_name": "Name", "content": "Message content"}
+
+        Example format:
+        [
+        {"user_name": "John Smith", "content": "Good morning team!"},
+        {"user_name": "Jane Doe", "content": "Morning John, I've got the report ready."}
+        ]
+        """
 
     print("\n=== OpenAI Prompt ===")
     print(prompt)
@@ -390,6 +427,7 @@ def create_messages(channel, users, messages_data, target_date: datetime):
     
     # Track created messages by index for threading
     message_map = {}
+    thread_map = {}  # New map to track thread IDs
     
     # Set to beginning of work day (9 AM UTC)
     current_time = target_date.replace(hour=9, minute=0, second=0, microsecond=0)
@@ -416,17 +454,30 @@ def create_messages(channel, users, messages_data, target_date: datetime):
             print(f"    Content: {msg_data['content'][:50]}...")
             print(f"    Timestamp: {timestamp}")
             
+            # Determine thread ID
+            thread_id = None
+            if "thread_id" in msg_data:
+                if msg_data["thread_id"] in thread_map:
+                    thread_id = thread_map[msg_data["thread_id"]]
+                else:
+                    # This is the first message in the thread
+                    thread_id = None
+            
             # Create the message
             message = message_service.create_message(
                 channel_id=channel.id,
                 user_id=user.id,
                 content=msg_data["content"],
-                created_at=timestamp
+                created_at=timestamp,
+                thread_id=thread_id  # Pass the thread ID
             )
             
             # Store the message for thread reference
             message_map[i] = message
-            print(f"  ✓ Created message from {user.name} at {timestamp}")
+            if "thread_id" in msg_data and msg_data["thread_id"] not in thread_map:
+                # Store the first message ID as the thread ID
+                thread_map[msg_data["thread_id"]] = message.id
+            print(f"  ✓ Created message {message.content[:50]}... from {user.name} at {timestamp} (thread_id: {thread_id})")
             
         except Exception as e:
             print(f"  ✗ Error creating message {i}:")
@@ -517,29 +568,6 @@ def delete_channel(channel: Channel):
         print(f"  ✗ Error deleting channel: {str(e)}")
         raise
 
-async def analyze_conversations(qa_service: QAService, channels: List[Channel], users: List[User]):
-    """Analyze conversations using QA service to characterize topics and users."""
-    print("\n=== Conversation Analysis ===")
-    
-    # Analyze main discussion topics for each channel
-    for channel in channels:
-        print(f"\nChannel: {channel.name}")
-        response = await qa_service.ask_about_channel(
-            channel.id,
-            "What are the main topics and themes discussed in this channel? What is the overall tone of discussion?"
-        )
-        print(f"Topics & Tone: {response}")
-
-    # Analyze each user's communication style and contributions
-    print("\n=== User Analysis ===")
-    for user in users:
-        print(f"\nUser: {user.name}")
-        response = await qa_service.ask_about_user(
-            user.id,
-            "How would you characterize this person's communication style, main topics of discussion, and typical interactions with others?",
-            include_channel_context=True  # Include broader context
-        )
-        print(f"Profile: {response}")
 
 async def main():
     parser = argparse.ArgumentParser(description='Populate database with template data')
@@ -614,29 +642,6 @@ async def main():
         
         current_date += timedelta(days=1)
     
-    # Initialize services for async operations
-    # vector_service = VectorService()
-    # qa_service = QAService()
-    
-    # print("\n=== Indexing Content ===")
-    
-    # # Index all users (async)
-    # for user in users:
-    #     print(f"Indexing user {user.name}...")
-    #     await vector_service.index_user(user.id)
-    
-    # # Index messages from each channel (async)
-    # for channel in channels:
-    #     print(f"Indexing channel {channel.name}...")
-    #     indexed_count = await vector_service.index_channel(
-    #         channel.id,
-    #         start_date=start_date,
-    #         end_date=end_date
-    #     )
-    #     print(f"Indexed {indexed_count} messages")
-    
-    # # Run conversation analysis (async)
-    # await analyze_conversations(qa_service, channels, users)
     
     print("\nDatabase population complete!")
     print(f"Created/verified {len(users)} users")

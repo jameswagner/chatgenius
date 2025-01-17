@@ -111,6 +111,11 @@ export const ChatMessage = ({ message, isReply = false, onReactionChange, onThre
     }
   };
 
+  const renderMessageContent = (content: string) => {
+    const htmlContent = content.replace(/\n/g, '<br>');
+    return { __html: htmlContent };
+  };
+
   return (
     <div 
       id={`message-${message.id}`}
@@ -183,9 +188,7 @@ export const ChatMessage = ({ message, isReply = false, onReactionChange, onThre
             </div>
           </div>
         ) : (
-          <p className={`mt-1 ${isCurrentUser ? 'text-blue-900' : 'text-gray-900'}`}>
-            {message.content}
-          </p>
+          <div className="message-content" dangerouslySetInnerHTML={renderMessageContent(message.content)} />
         )}
 
         {/* Attachments */}

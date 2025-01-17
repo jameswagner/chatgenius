@@ -100,7 +100,7 @@ class VectorService:
             raise ValueError(f"Workspace {workspace_id} not found")
 
         # Get all channels in the workspace
-        channels = self.channel_service.get_channels_by_workspace_id(workspace_id)
+        channels = self.channel_service.get_workspace_channels(workspace_id)
         print(f"Found {len(channels)} channels in workspace {workspace_name}")
         for channel in channels:
             await self.index_channel(channel.id, start_date, end_date, is_grouped)

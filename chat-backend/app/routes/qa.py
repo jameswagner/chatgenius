@@ -62,9 +62,9 @@ def ask_about_channel(channel_id):
         
         # If this looks like a name rather than ID, get the channel by name
         if not channel_id.startswith('CHANNEL#'):
-            channel = qa_service.channel_service.get_channel_by_name(channel_id)
+            channel = qa_service.channel_service.get_channel_by_id(channel_id)
             if not channel:
-                print(f"❌ No channel found with name: {channel_id}")
+                print(f"❌ No channel found with id: {channel_id}")
                 return jsonify({"error": "Channel not found"}), 404
             channel_id = channel.id
             print(f"✓ Found channel: {channel.name} (ID: {channel_id})")
@@ -76,9 +76,9 @@ def ask_about_channel(channel_id):
         
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
-    except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        return jsonify({"error": f"Failed to process question: {str(e)}"}), 500
+    #except Exception as e:
+       # print(f"❌ Error: {str(e)}")
+       # return jsonify({"error": f"Failed to process question: {str(e)}"}), 500
 
 @bp.route('/channels/name/<name>/ask', methods=['POST'])
 @cross_origin()

@@ -111,6 +111,10 @@ class ChannelService(BaseService):
         if type == 'dm' and other_user_id:
             self.add_channel_member(channel_id, other_user_id)
             
+        if type == 'bot':
+            bot_user = self.user_service.get_bot_user("bot")
+            self.add_channel_member(channel_id, bot_user.id)
+            
         # Get channel with members
         channel = Channel(**self._clean_item(item))
         channel.members = self.get_channel_members(channel_id)
@@ -414,7 +418,7 @@ class ChannelService(BaseService):
             print(f"Error getting channel by name: {e}")
             return None 
 
-    def get_workspace_channels(self, workspace_id: str, user_id: Optional[str] = None) -> List[Channel]:
+    def get_workspace_channels(self, workspace_id: str, user_id: Optional[str] = None, public_only: bool = True) -> List[Channel]:
         """Get all channels in a workspace, optionally including membership status for a specific user.
         
         Args:
@@ -440,8 +444,9 @@ class ChannelService(BaseService):
             if user_id:
                 is_member = self.is_channel_member(channel_id, user_id)
                 channel_data['is_member'] = is_member
+            if public_only and channel_data['type'] != 'public':
+                continue
             channels.append(Channel(**channel_data))
-        print(channels)
         return channels
 
     def add_channel_to_workspace(self, channel_id: str, workspace_id: str) -> None:

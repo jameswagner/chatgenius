@@ -106,12 +106,13 @@ export const api = {
       return snakeToCamel(response.data);
     },
 
-    create: async (data: { name: string; type?: string; otherUserId?: string }): Promise<Channel> => {
+    create: async (data: { name: string; workspaceId: string; type?: string; otherUserId?: string }): Promise<Channel> => {
       console.log('Creating channel with data:', data); // Debug log
       const response = await client.post('/channels', {
         name: data.name,
         type: data.type || 'public',  // Make sure we're sending the type
-        otherUserId: data.otherUserId
+        otherUserId: data.otherUserId,
+        workspaceId: data.workspaceId
       });
       return snakeToCamel(response.data);
     },

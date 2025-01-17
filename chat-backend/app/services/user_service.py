@@ -23,6 +23,26 @@ class UserService(BaseService):
             aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
             region_name=os.getenv('AWS_REGION')
         )
+        
+    def create_bot_user(self, email: str, name: str) -> User:
+        """Create a new bot user"""
+        # check if a user of type bot exists
+        response = self.table.query(
+            IndexName='GSI1',
+            KeyConditionExpression=Key('GSI1PK').eq('TYPE#bot') & Key('GSI1SK').eq('NAME#Bot')
+        )
+        if response['Items']:
+            return User(**self._clean_item(response['Items'][0]))
+        
+        return self.create_user(email, name, type='bot')
+    
+    def get_bot_user(self, name: str) -> User:
+        """Get a bot user by their username."""
+        response = self.table.query(
+            IndexName='GSI1',
+            KeyConditionExpression=Key('GSI1PK').eq('TYPE#bot')
+        )
+        return User(**self._clean_item(response['Items'][0])) if response['Items'] else None
 
     def create_user(self, email: str, name: str, password: str = None, type: str = 'user', role: str = None, bio: str = None, id: str = None) -> User:
         """Create a new user
@@ -31,7 +51,7 @@ class UserService(BaseService):
             email: User's email address
             name: User's display name
             password: User's password (optional for persona users)
-            type: User type ('user' or 'persona')
+            type: User type ('user', 'bot', or 'persona')
             role: User's role (for persona users)
             bio: User's bio (for persona users)
             id: Optional user ID
@@ -81,7 +101,8 @@ class UserService(BaseService):
             'last_active': timestamp,
             'created_at': timestamp,
             'role': role,
-            'bio': bio
+            'bio': bio,
+            'entity_type': "USER"
         }
         
         try:

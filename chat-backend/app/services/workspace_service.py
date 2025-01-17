@@ -57,7 +57,7 @@ class WorkspaceService(BaseService):
         if 'Item' not in response:
             return None
         item = response['Item']
-        return Workspace(id=item['workspace_id'], name=item['name'], created_at=item['created_at']) 
+        return Workspace(id=item['id'], name=item['name'], created_at=item['created_at']) 
 
     def get_all_workspaces(self) -> List[Workspace]:
         """Get all unique workspaces using the entity_type index, handling pagination internally."""
@@ -102,4 +102,4 @@ class WorkspaceService(BaseService):
             return None
         item = response['Items'][0]
         print(f"Found workspace item: {item}")
-        return Workspace(id=item['workspace_id'], name=item['name'], created_at=item['created_at']) 
+        return Workspace(id=item['id'], name=item['name'], created_at=item['created_at']) 

@@ -15,10 +15,10 @@ class Message:
     version: int = 1
     reactions: Dict[str, List[str]] = field(default_factory=dict)
     attachments: List[str] = field(default_factory=list)
-    reply_count: Optional[int] = None
+    reply_count: Optional[int] = 0
     user: Optional[dict] = None
     edit_history: List[Dict] = field(default_factory=list)
-    replies: List['Message'] = field(default_factory=list)
+    replies: List[str] = field(default_factory=list)
 
     def to_dict(self):
         return {
@@ -38,5 +38,6 @@ class Message:
                         else self.edited_at),
             'isEdited': self.is_edited,
             'editHistory': self.edit_history,
-            'replies': [reply.to_dict() for reply in self.replies]
+            'replies': self.replies,
+            'replyCount': len(self.replies)
         } 

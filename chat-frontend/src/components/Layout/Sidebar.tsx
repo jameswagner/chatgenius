@@ -25,7 +25,6 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
   const [isCreating, setIsCreating] = useState(false);
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [selectedWorkspace, setSelectedWorkspace] = useState<string>('NO_WORKSPACE');
-  const [botChannel, setBotChannel] = useState<Channel | null>(null);
 
   console.log('Initial availableChannels:', availableChannels);
 

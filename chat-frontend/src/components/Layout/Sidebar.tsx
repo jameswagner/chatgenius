@@ -7,11 +7,12 @@ import { socketService } from '../../services/socket';
 export interface SidebarProps {
   currentChannel: string;
   onChannelSelect: (channelId: string, channelName: string, isDirectMessage: boolean, isBot: boolean) => void;
+  onWorkspaceSelect: (workspaceId: string) => void;
   channels: Channel[];
   messages: Message[];
 }
 
-export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
+export const Sidebar = ({ currentChannel, onChannelSelect, onWorkspaceSelect }: SidebarProps) => {
   const currentUserId = localStorage.getItem('userId');
   const [joinedChannels, setJoinedChannels] = useState<Channel[]>([]);
   const [availableChannels, setAvailableChannels] = useState<Channel[]>([]);
@@ -24,22 +25,29 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
   const [isChannelsCollapsed, setIsChannelsCollapsed] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
-  const [selectedWorkspace, setSelectedWorkspace] = useState<string>('NO_WORKSPACE');
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string>(() => {
+    const savedWorkspace = localStorage.getItem(`selectedWorkspace_${currentUserId}`);
+    return savedWorkspace || (workspaces.length > 0 ? workspaces[0].id : '');
+  });
+  const [isLoadingChannels, setIsLoadingChannels] = useState(false);
 
-  console.log('Initial availableChannels:', availableChannels);
+ 
 
   const fetchChannels = async () => {
-    if (selectedWorkspace !== 'NO_WORKSPACE') {
-      try {
-        const channels = await api.channels.listByWorkspace(selectedWorkspace);
-        console.log('API Response for channels:', channels);
-        const joined = channels.filter((channel: Channel) => channel.isMember);
-        const available = channels.filter((channel: Channel) => !channel.isMember);
-        setJoinedChannels(joined);
-        setAvailableChannels(available);
-      } catch (error) {
-        console.error('Failed to fetch channels:', error);
-      }
+    if (!selectedWorkspace) return;
+    console.log('Fetching channels for workspace:', selectedWorkspace);
+    setIsLoadingChannels(true);
+    try {
+      const channels = await api.channels.listByWorkspace(selectedWorkspace);
+      console.log('Fetched channels:', channels);
+      const joined = channels.filter((channel: Channel) => channel.isMember);
+      const available = channels.filter((channel: Channel) => !channel.isMember);
+      setJoinedChannels(joined);
+      setAvailableChannels(available);
+    } catch (error: any) {
+      console.error('Failed to fetch channels:', error);
+    } finally {
+      setIsLoadingChannels(false);
     }
   };
 
@@ -141,11 +149,6 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
   });
 
   const hasUnreadMessages = (channel: Channel): boolean => {
-    console.log('\nChecking unread status for channel:', {
-      channelId: channel.id,
-      channelName: channel.name,
-      unreadCount: channel.unreadCount
-    });
     
     return (channel.unreadCount || 0) > 0;
   };
@@ -165,11 +168,6 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
     try {
       const workspacesData: { id: string; name: string }[] = await api.workspaces.list();
       const sortedWorkspaces = workspacesData.sort((a, b) => a.name.localeCompare(b.name));
-      const noWorkspaceIndex = sortedWorkspaces.findIndex(ws => ws.name === 'NO_WORKSPACE');
-      if (noWorkspaceIndex !== -1) {
-        const [noWorkspace] = sortedWorkspaces.splice(noWorkspaceIndex, 1);
-        sortedWorkspaces.unshift(noWorkspace);
-      }
       setWorkspaces(sortedWorkspaces);
       const savedWorkspace = localStorage.getItem(`selectedWorkspace_${currentUserId}`);
       if (savedWorkspace && sortedWorkspaces.some(ws => ws.id === savedWorkspace)) {
@@ -182,13 +180,10 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
     }
   };
 
-  const handleWorkspaceChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const newWorkspace = event.target.value;
-    setSelectedWorkspace(newWorkspace);
-    if (currentUserId) {
-      localStorage.setItem(`selectedWorkspace_${currentUserId}`, newWorkspace);
-    }
-    fetchChannels();
+  const handleWorkspaceChange = (workspaceId: string) => {
+    setSelectedWorkspace(workspaceId);
+    localStorage.setItem(`selectedWorkspace_${currentUserId}`, workspaceId);
+    onWorkspaceSelect(workspaceId);
   };
 
   useEffect(() => {
@@ -196,8 +191,6 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
       const savedWorkspace = localStorage.getItem(`selectedWorkspace_${currentUserId}`);
       if (savedWorkspace) {
         setSelectedWorkspace(savedWorkspace);
-      } else {
-        setSelectedWorkspace('NO_WORKSPACE');
       }
     }
     fetchWorkspaces().then(() => {
@@ -206,15 +199,12 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
   }, [currentUserId]);
 
   useEffect(() => {
+    console.log('Selected workspace changed:', selectedWorkspace);
     fetchChannels();
   }, [selectedWorkspace]);
 
   useEffect(() => {
-    console.log('Rendering availableChannels:', availableChannels);
   }, [availableChannels]);
-
-  console.log('Workspaces before rendering:', workspaces);
-  console.log('Workspaces before rendering dropdown:', workspaces);
 
 
   const handleAskQuestion = async () => {
@@ -249,7 +239,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
         {/* Workspace Selection */}
         <div className="p-4">
           <h2 className="font-bold mb-2">Select Workspace</h2>
-          <select title="Select Workspace" value={selectedWorkspace} onChange={handleWorkspaceChange} className="workspace-dropdown p-2 border rounded bg-gray-700 text-white w-full">
+          <select title="Select Workspace" value={selectedWorkspace} onChange={(e) => handleWorkspaceChange(e.target.value)} className="workspace-dropdown p-2 border rounded bg-gray-700 text-white w-full">
             {workspaces.map(workspace => (
               <option key={workspace.id} value={workspace.id} className="bg-gray-800 text-white">{workspace.name}</option>
             ))}
@@ -324,7 +314,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
               +
             </button>
           </div>
-          {!isChannelsCollapsed && (
+          {!isLoadingChannels && !isChannelsCollapsed && (
             <ul className="space-y-1">
               {Array.isArray(joinedChannels) && joinedChannels.map(channel => (
                 <li 
@@ -363,7 +353,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect }: SidebarProps) => {
         )}
 
         {/* Ask a Question Button */}
-        <div className="p-4">
+        <div className="p-4 flex justify-center">
           <button className="ask-question-button bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded px-4 py-2 hover:from-blue-600 hover:to-indigo-600 shadow-lg transform hover:scale-105 transition-transform duration-200" onClick={handleAskQuestion}>
             Ask a Question
           </button>

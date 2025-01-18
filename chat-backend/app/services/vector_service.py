@@ -118,19 +118,6 @@ class VectorService:
             end_date = end_date + timedelta(days=1) - timedelta(seconds=1)  # Set to end of the day
         end_time = end_date.isoformat() if end_date else None
 
-        # Check if index exists, create if not
-        index_name = f"{self.index_name}-{workspace.name}".lower()
-        # replace non alphanumeric characters with '-'
-        index_name = re.sub(r'[^a-z0-9]+', '-', index_name)
-        indices = self.pinecone.list_indexes()
-        index_names = [index.name for index in indices]
-        print(f"Index names: {index_names}")
-        if index_name not in index_names:
-            print(f"Creating index {index_name}")
-            self.pinecone.create_index(index_name, dimension=3072, spec=ServerlessSpec(cloud='aws', region='us-east-1') 
-)
-            print(f"Created index {index_name}")
-
         # Get messages
         messages = self.message_service.get_messages(channel_id, start_time=start_time, end_time=end_time)
         if not messages:
@@ -141,9 +128,9 @@ class VectorService:
             for message in messages:
                 metadata = self._prepare_message_metadata(message, channel.name)
                 # Index message
-                self.index.upsert(index_name, message.id, message.content, metadata)
+                self.index.upsert(message.id, message.content, metadata)
         else:
-            await self.index_grouped_messages(channel_id, messages, index_name, workspace)
+            await self.index_grouped_messages(channel_id, messages, workspace)
 
         return len(messages)
 
@@ -267,7 +254,7 @@ class VectorService:
             "user_id": user_id
         } 
 
-    async def index_grouped_messages(self, channel_id: str, messages: List[Message], index_name: str, workspace: Workspace) -> int:
+    async def index_grouped_messages(self, channel_id: str, messages: List[Message], workspace: Workspace) -> int:
         """Index messages in groups based on MESSAGES_PER_VECTOR and threads"""
         print(f"Indexing grouped messages for channel {channel_id}")
         channel = self.channel_service.get_channel_by_id(channel_id)
@@ -275,10 +262,7 @@ class VectorService:
             raise ValueError(f"Channel {channel_id} not found")
         
         message_id_to_message = {message.id: message for message in messages}
-        index = PineconeVectorStore(
-            embedding=self.embeddings,
-            index_name=index_name
-        )
+        index = self.index
         grouped_messages = []
         for message in messages:
             if message.thread_id:

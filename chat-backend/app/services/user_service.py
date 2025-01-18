@@ -252,3 +252,23 @@ class UserService(BaseService):
             List of User objects
         """
         return self._batch_get_users(set(user_ids)) 
+    
+    def get_user_profile(self, user_id: str) -> str:
+        """Get a user's profile by their ID."""
+        response = self.table.get_item(
+            Key={
+                'PK': f'USER#{user_id}',
+                'SK': '#METADATA'
+            }
+        )
+        
+        if 'Item' not in response:
+            return "User profile not found"
+        
+        # Check if name, role, and bio exist in the response
+        name = response['Item'].get('name', 'Name not found')
+        role = response['Item'].get('role', 'Role not found')
+        bio = response['Item'].get('bio', 'Bio not found')
+        profile = f"Name: {name}\nRole: {role}\nBio: {bio}"
+        return profile
+        

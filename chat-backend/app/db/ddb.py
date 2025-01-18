@@ -198,8 +198,8 @@ class DynamoDB:
     def update_message(self, message_id: str, content: str) -> Message:
         return self.message_service.update_message(message_id, content)
 
-    def search_messages(self, user_id: str, query: str) -> List[Message]:
-        return self.search_service.search_messages(user_id, query)
+    def search_messages(self, user_id: str, query: str, workspace_id: str) -> List[Message]:
+        return self.search_service.search_messages(user_id, query, workspace_id)
 
     def is_channel_member(self, channel_id: str, user_id: str) -> bool:
         """Check if a user is a member of a channel."""

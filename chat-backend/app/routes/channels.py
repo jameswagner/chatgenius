@@ -178,8 +178,6 @@ def get_channel_messages(channel_id):
     start_time = request.args.get('start_time')
     end_time = request.args.get('end_time')
     messages = db.get_messages(channel_id, limit=limit, start_time=start_time, end_time=end_time)
-    for message in messages[:15]:
-        print(f"Message: {message.to_dict()}")
     if messages is None:
         return jsonify({'error': 'Failed to get messages'}), 500
     return jsonify([message.to_dict() for message in messages])

@@ -1,5 +1,6 @@
+import json
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.prompts import PromptTemplate
 from langchain_pinecone import PineconeVectorStore
@@ -17,7 +18,7 @@ from ..models.message import Message
 
 # Constants
 TOKEN_LIMIT = 8192
-BUFFER_SIZE = 200
+BUFFER_SIZE = 250
 MESSAGE_BATCH_SIZE = 5
 PREVIOUS_MESSAGES_PREAMBLE = "The following is your previous answer, based on the previous relevant messages."
 NEW_MESSAGES_PREAMBLE = "The following are the current messages. Please integrate the below set of messages with the previous response to provide a cohesive response. Avoid using words like \"continue\" and \"still\" that indicate you are comparing the previous response to the current messages. It should not be obvious to the end user that multiple prompts were used to construct the response."
@@ -37,36 +38,27 @@ class QAService:
         
         # Define prompt templates
         self.user_template = PromptTemplate(
-            template="""Based on the following context about a user, answer this question: {question}
-
-Context about the user and their messages:
-{context}
-
-Please provide a detailed answer based only on the information in the context.""",
-            input_variables=["question", "context"]
+            template="""Based on the following context about a user, answer this question: {question}\nHere is recent chat history which may or may not be relevant to the current question:\n{recent_messages}\n\nContext about the user and their messages:\n{context}\n\nPlease provide a detailed answer based only on the information in the context.""",
+            input_variables=["question", "context", "recent_messages"]
         )
         
         self.channel_template = PromptTemplate(
-            template="""Based on the following context about a channel, answer this question: {question}
-
-Context about the channel and its messages:
-{context}
-
-Please provide a detailed answer based only on the information in the context.""",
-            input_variables=["question", "context"]
+            template="""Based on the following context about a channel, answer this question: {question}\nHere is recent chat history which may or may not be relevant to the current question:\n{recent_messages}\n\nContext about the channel and its messages:\n{context}\n\nPlease provide a detailed answer based only on the information in the context.""",
+            input_variables=["question", "context", "recent_messages"]
         )
         
         self.workspace_template = PromptTemplate(
-            template="""Based on the following context about a workspace and its members, answer this question: {question}
-
-Context about the workspace channels and users:
-{context}
-
-Please provide a detailed answer based only on the information in the context.""",
-            input_variables=["question", "context"]
+            template="""Based on the following context about a workspace and its members, answer this question: {question}\nHere is recent chat history which may or may not be relevant to the current question:\n{recent_messages}\n\nContext about the workspace channels and users:\n{context}\n\nPlease provide a detailed answer based only on the information in the context.""",
+            input_variables=["question", "context", "recent_messages"]
         )
         
         self.tokenizer = tiktoken.get_encoding("cl100k_base")  # Use the appropriate model
+        
+        # Initialize self.index in the constructor
+        self.index = PineconeVectorStore(
+            embedding=self.embeddings,
+            index_name=self.vector_service.index_name
+        )
     
     def count_tokens(self, text: str) -> int:
         tokens = self.tokenizer.encode(text)
@@ -83,14 +75,7 @@ Please provide a detailed answer based only on the information in the context.""
         - Relevant context
         - Supporting details
         """
-        index_name = os.getenv("PINECONE_INDEX") + "-" + workspace_name.lower()
-        #replace non alphanumeric characters with '-'
-        index_name = re.sub(r'[^a-z0-9]+', '-', index_name)
-        
-        vector_store = PineconeVectorStore(
-            embedding=self.embeddings,
-            index_name=index_name
-        )
+        vector_store = self.index
         
         # Create retriever with enhanced parameters
         filtered_retriever = vector_store.as_retriever(
@@ -112,16 +97,10 @@ Please provide a detailed answer based only on the information in the context.""
 
     async def _get_user_profile(self, user_id: str) -> Optional[dict]:
         """Get a user's profile from vector store"""
-        profile_retriever = self.vector_store.as_retriever(
-            search_type="mmr",
-            search_kwargs={
-                "k": 1,
-                "namespace": "users",
-                "filter": {"type": "user_profile", "user_id": user_id}
-            }
-        )
-        results = await profile_retriever.ainvoke("")
-        return results[0] if results else None
+        
+        #retrieve the user profile from ddb
+        user_profile = self.user_service.get_user_profile(user_id)
+        return user_profile
 
     def _format_message(self, message: Message, channel_name: str = None) -> str:
         """Format a Message object with timestamp for context"""
@@ -143,9 +122,6 @@ Please provide a detailed answer based only on the information in the context.""
         else:
             return f"{user_name}:\n{message.content}\n{timestamp}"
 
-    def _format_user_profile(self, profile_doc: dict) -> str:
-        """Format a user profile for context"""
-        return f"- {profile_doc.page_content.strip()}"
 
     def generate_initials(self, name: str, user_initials: dict) -> str:
         """Generate unique initials for a user name and store in user_initials."""
@@ -173,23 +149,22 @@ Please provide a detailed answer based only on the information in the context.""
                 user_profiles[user_id] = profile
         return user_profiles
 
-    async def build_context_parts(self, user_profiles: dict, message_docs: List[Message], channel_id_to_name: Dict[str, str]) -> list:
+    async def build_context_parts(self, user_profiles: dict, message_docs: List[Message], channel_id_to_name: Dict[str, str]) -> Tuple:
         """Build context parts from user profiles and message documents."""
         context_parts = []
         user_initials = {}
+        print("Formatting context parts...")
         if user_profiles:
             context_parts.append("Team Members:")
             for profile in user_profiles.values():
-                content = profile.page_content.strip()
-                if content.startswith("Name: "):
-                    name = content.split("\n")[0].replace("Name: ", "").strip()
-                    initials = self.generate_initials(name, user_initials)
-                    lines = content.split("\n")
-                    lines[0] = f"Name: {name} ({initials})"
-                    context_parts.append(f"- {chr(10).join(lines)}")
-                else:
-                    context_parts.append(self._format_user_profile(profile))
+                content = profile.strip()
+                name = content.split("\n")[0].replace("Name: ", "").strip()
+                initials = self.generate_initials(name, user_initials)
+                lines = content.split("\n")
+                lines[0] = f"Name: {name}. Initials (for reference in chat): {initials}"
+                context_parts.append(f"- {chr(10).join(lines)}")
         channel_messages = {}
+        print("Building channel messages...")
         for message in message_docs:
             channel_id = message.channel_id
             channel_name = channel_id_to_name.get(channel_id, 'unknown-channel')
@@ -233,11 +208,11 @@ Please provide a detailed answer based only on the information in the context.""
         message_text = f"{display_name} {timestamp_str}:\n{message.content}"
         return message_text, current_date
 
-    async def _add_message_channels_to_context(self, context_parts_before_messages, sorted_channels, user_initials, template, question, start_channel=0, start_message=0):
+    async def _add_message_channels_to_context(self, context_parts_before_messages, sorted_channels, user_initials, template, question, recent_messages="", start_channel=0, start_message=0):
         """Add messages from all channels to the context, starting from a specific channel and message index."""
         message_count = 0
         # Format the initial context with the template for accurate token counting
-        initial_context = template.format(question=question, context="\n\n".join(context_parts_before_messages))
+        initial_context = template.format(question=question, context="\n\n".join(context_parts_before_messages), recent_messages=recent_messages)
         total_tokens = self.count_tokens(initial_context)
         max_tokens = TOKEN_LIMIT - BUFFER_SIZE
         current_date = None
@@ -254,7 +229,7 @@ Please provide a detailed answer based only on the information in the context.""
                 context_parts.append(message_text)
                 message_count += 1
                 if message_count % MESSAGE_BATCH_SIZE == 0 or message_index == len(sorted_messages) - 1:
-                    updated_context = template.format(question=question, context="\n\n".join(context_parts))
+                    updated_context = template.format(question=question, recent_messages=recent_messages, context="\n\n".join(context_parts))
                     total_tokens = self.count_tokens(updated_context)
                     if total_tokens > max_tokens:
                         print(f"\nReached token limit at {message_count} messages")
@@ -287,9 +262,6 @@ Please provide a detailed answer based only on the information in the context.""
 
     def _convert_to_message(self, doc: Document ) -> Message:
         """Convert a document from the vector DB to a Message object."""
-
-        #print class of doc
-        print(f"Doc class: {type(doc)}")
         
         return Message(
             id=doc.metadata.get('message_id'),
@@ -321,10 +293,11 @@ Please provide a detailed answer based only on the information in the context.""
         question: str,
         message_filter: dict,
         template: PromptTemplate,
-        include_user_profiles: bool = False,
+        include_user_profiles: bool = True,
         additional_users: set = None,
         get_all: bool = False,
-        workspace_name: str = None
+        workspace_name: str = None,
+        recent_messages: str = ""
     ) -> Dict:
         """Core QA method used by all specific QA methods with a window-based approach."""
         if get_all:
@@ -348,24 +321,27 @@ Please provide a detailed answer based only on the information in the context.""
         user_ids = message_user_ids | (additional_users or set())
         print(f"\nFound {len(user_ids)} unique users")
         user_profiles = await self.fetch_user_profiles(user_ids) if include_user_profiles else {}
+
         context_parts_before_messages, sorted_channels, user_initials = await self.build_context_parts(user_profiles, message_docs, channel_id_to_name)
+
         responses = []
         start_channel = 0
         start_message = 0
         while True:
-           
+            print(f"Top of while loop, len of responses: {len(responses)}")
             if(len(responses) > 0):               
                 context_parts_before_messages.append(f"{PREVIOUS_MESSAGES_PREAMBLE}{responses[-1]}")
                 context_parts_before_messages.append(f"{NEW_MESSAGES_PREAMBLE}")
-            context_parts, start_channel, start_message = await self._add_message_channels_to_context(context_parts_before_messages, sorted_channels, user_initials, template, question, start_channel, start_message)
+            context_parts, start_channel, start_message = await self._add_message_channels_to_context(context_parts_before_messages, sorted_channels, user_initials, template, question, recent_messages, start_channel, start_message)
+            print("After add message channels to context")
             context = "\n\n".join(context_parts)
-            prompt = template.format(question=question, context=context)
+            print("About to format with recent messages: ", recent_messages)
+            prompt = template.format(question=question, context=context, recent_messages=recent_messages)
             print(f"\n\n=== FULL PROMPT TOKENS: {self.count_tokens(prompt)}")
             os.makedirs("./temp", exist_ok=True)
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
             filename = f"./temp/qa_prompt_{timestamp}.txt"
                 
-            
             print("\nGetting answer from LLM...")
             response = await self.llm.ainvoke(prompt)
             print("✓ Got response")
@@ -398,7 +374,7 @@ Please provide a detailed answer based only on the information in the context.""
             workspace_name=self.channel_service.get_workspace_by_channel_id(channel_id).name
         )
 
-    async def ask_about_workspace(self, workspace_id: str, question: str, get_all: bool = False) -> Dict:
+    async def ask_about_workspace(self, workspace_id: str, question: str, get_all: bool = False, recent_messages: str = "") -> Dict:
         """Answer questions about a workspace using context from its channels and users"""
         # Get all channels in workspace
         print(f"\n=== Starting workspace QA for '{workspace_id}' ===")
@@ -413,6 +389,7 @@ Please provide a detailed answer based only on the information in the context.""
             members = self.channel_service.get_channel_members(channel.id)
             workspace_users.update(member['id'] for member in members)
         
+        print(f"Workspace users: {workspace_users}")
         return await self._get_qa_response(
             question=question,
             message_filter={
@@ -421,15 +398,22 @@ Please provide a detailed answer based only on the information in the context.""
             template=self.workspace_template,
             additional_users=workspace_users,
             get_all=get_all,
-            workspace_name=self.workspace_service.get_workspace_name_by_id(workspace_id)
+            workspace_name=self.workspace_service.get_workspace_name_by_id(workspace_id),
+            recent_messages=recent_messages
         )
         
     async def answer_bot_message(self, content: str, workspace_id: str, channel_id: str) -> Message:
         """Answer a message from the bot"""
-        response  = await self.ask_about_workspace(
+        recent_messages = await self._get_recent_messages(channel_id)
+        classification = await self._classify_query(content, recent_messages)
+        print(f"Classification: {classification}")
+        get_all = classification.get('type') == 'comprehensive'
+
+        response = await self.ask_about_workspace(
             question=content,
             workspace_id=workspace_id,
-            get_all=True,
+            get_all=get_all,
+            recent_messages=recent_messages
         )
         message = response.get("answer")
         print(f"Bot message: {message}")
@@ -441,6 +425,7 @@ Please provide a detailed answer based only on the information in the context.""
         )
         print(f"Stored message: {stored_message}")
         return stored_message
+    
     async def ask_about_user(self, user_id: str, question: str, include_channel_context: bool = False) -> Dict:
         """Ask a question about a specific user"""
         if include_channel_context:
@@ -470,3 +455,50 @@ Please provide a detailed answer based only on the information in the context.""
             template=self.user_template,
             additional_users={user_id}
         ) 
+
+    async def _get_recent_messages(self, channel_id: str) -> str:
+        recent_messages = self.message_service.get_messages(channel_id, limit=11, reverse=True)[1:]
+        recent_messages = recent_messages[::-1]  # Reverse to get oldest first
+        return '\n'.join([msg.content for msg in recent_messages]) if recent_messages else 'N/A'
+
+    async def _classify_query(self, content: str, recent_messages: str) -> Dict:
+        # Prepare the question for OpenAI
+        question = (
+            "You are a query classifier that determines whether a user's question requires targeted message retrieval "
+            "or comprehensive message analysis. Consider both the latest question and recent chat history when making your decision. "
+            "Respond with a JSON object containing:\n\n"
+            "1. 'type': Either 'targeted' or 'comprehensive'\n"
+            "2. 'confidence': A score between 0 and 1\n"
+            "3. 'reasoning': A brief explanation of your classification\n\n"
+            "Guidelines:\n"
+            "- 'targeted' questions typically:\n"
+            "  * Focus on specific events, dates, or topics with clear boundaries\n"
+            "  * Ask for straightforward factual information\n"
+            "  * Show confidence in what they're looking for\n"
+            "  * Can likely be answered with a small set of relevant messages\n\n"
+            "- 'comprehensive' questions typically:\n"
+            "  * Express uncertainty or skepticism about previous answers ('are you sure?', 'really?')\n"
+            "  * Repetition or rephrasing of the same question may indicate a need for comprehensive analysis\n"
+            "  * Ask about team dynamics, communication patterns, or organizational behavior\n"
+            "  * Request analysis of sentiment, tone, or social interactions\n"
+            "  * Explore how decisions or discussions evolved over time\n"
+            "  * Look for implicit patterns that might not be captured in keyword searches\n"
+            "  * Ask about general practices, team culture, or working styles\n"
+            "  * Question the completeness or accuracy of information\n"
+            "  * Require understanding of indirect or subtle contextual cues\n\n"
+            "- Follow-up considerations:\n"
+            "  * Questions expressing doubt should trigger comprehensive analysis\n"
+            "  * Questions about broader impact or team implications need comprehensive review\n"
+            "  * Simple clarifications about specific facts can remain targeted.  "
+            "CHAT HISTORY:\n{recent_messages}\n\nCURRENT QUESTION: {question}"
+        ).format(recent_messages=recent_messages, question=content)
+
+        # Send the question to OpenAI
+        response = await self.llm.ainvoke(question)
+        print(f"Classify query response: {response.content}")
+        
+        #content is a string, so we need to convert it to a dictionary
+        content = json.loads(response.content)
+        print(f"Classify query response as dictionary: {content}")
+        # Return the JSON response
+        return content

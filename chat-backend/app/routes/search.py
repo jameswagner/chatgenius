@@ -15,12 +15,12 @@ def search_messages():
         return '', 200
         
     query = request.args.get('q', '')
-    channel_id = request.args.get('channel_id')
+    workspace_id = request.args.get('workspace_id')
     
     if not query:
         return jsonify({'error': 'Search query is required'}), 400
         
-    messages = db.search_messages(request.user_id, query)
+    messages = db.search_messages(request.user_id, query, workspace_id)
     
     # Enhance message data with channel info
     response = []

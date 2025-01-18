@@ -14,6 +14,7 @@ interface GroupedSearchResults {
   dms: { [channelId: string]: Message[] };
   memberChannels: { [channelId: string]: Message[] };
   otherChannels: { [channelId: string]: Message[] };
+  publicChannels: { [channelId: string]: Message[] };
 }
 
 // Move this outside the component
@@ -37,6 +38,8 @@ export const ChatLayout = () => {
   const [isLoadingChannel, setIsLoadingChannel] = useState(false);
   const [collapsedChannels, setCollapsedChannels] = useState<Set<string>>(new Set());
   const [channelNames, setChannelNames] = useState<{ [channelId: string]: string }>({});
+  const [isLoadingMessage, setIsLoadingMessage] = useState(false);
+  const [currentWorkspace, setCurrentWorkspace] = useState<string | null>(() => localStorage.getItem('currentWorkspace'));
   const navigate = useNavigate();
 
   // Cache for user data
@@ -221,6 +224,7 @@ export const ChatLayout = () => {
   useEffect(() => {
     if (currentChannel) {
       const fetchMessages = async () => {
+        if (!currentChannel) return; // Ensure channelId is not blank
         try {
           const data = await api.messages.list(currentChannel);
 
@@ -237,21 +241,21 @@ export const ChatLayout = () => {
 
   const handleSendMessage = async (content: string, files: File[], threadId?: string) => {
     if (!currentChannel) return;
-    
+    setIsLoadingMessage(true);
     try {
       const formData = new FormData();
       formData.append('content', content);
       if (threadId) {
         formData.append('thread_id', threadId);
       }
-      
       files.forEach(file => {
         formData.append('files', file);
       });
-
       await api.messages.create(currentChannel, formData);
     } catch (error) {
       console.error('Failed to send message:', error);
+    } finally {
+      setIsLoadingMessage(false);
     }
   };
 
@@ -282,7 +286,7 @@ export const ChatLayout = () => {
       setCurrentChannelType(isDirectMessage ? 'dm' : isBot ? 'bot' : 'public');
       
       // Load messages
-      const messages = await api.messages.list(channelId);
+      const messages = currentChannel ? await api.messages.list(channelId) : [];
       console.log('Loaded messages:', messages);
       setMessages(messages);
 
@@ -347,7 +351,8 @@ export const ChatLayout = () => {
     const grouped: GroupedSearchResults = {
       dms: {},
       memberChannels: {},
-      otherChannels: {}
+      otherChannels: {},
+      publicChannels: {}
     };
 
     messages.forEach(message => {
@@ -359,13 +364,15 @@ export const ChatLayout = () => {
         return;
       }
 
-      // Since backend only returns messages from channels the user is a member of,
-      // we can simply check if it's a DM or not
       let targetGroup;
       if (channel.type === 'dm') {
         targetGroup = grouped.dms;
-      } else {
+      } else if (channel.isMember) {
         targetGroup = grouped.memberChannels;
+      } else if (channel.type === 'public') {
+        targetGroup = grouped.publicChannels;
+      } else {
+        targetGroup = grouped.otherChannels;
       }
 
       if (!targetGroup[channel.id]) {
@@ -430,12 +437,23 @@ export const ChatLayout = () => {
     });
   }, [messages]);
 
+  const handleWorkspaceSelect = (workspaceId: string) => {
+    setCurrentWorkspace(workspaceId);
+    localStorage.setItem('currentWorkspace', workspaceId);
+    // Reset channel-related state
+    setCurrentChannel(null);
+    setCurrentChannelName('');
+    setCurrentChannelType('public');
+    setMessages([]);
+    setSearchResults([]);
+  };
 
   return (
     <div className="flex h-screen">
       <Sidebar 
         currentChannel={currentChannel || ''}
         onChannelSelect={handleChannelSelect}
+        onWorkspaceSelect={handleWorkspaceSelect}
         channels={channels}
         messages={messages}
       />
@@ -450,7 +468,7 @@ export const ChatLayout = () => {
           </div>
           <div className="flex-1 flex justify-center">
             <div className="w-96">
-              <SearchBar onResultsFound={handleSearchResults} />
+              <SearchBar onResultsFound={handleSearchResults} workspaceId={currentWorkspace || ''} />
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -464,7 +482,7 @@ export const ChatLayout = () => {
           </div>
         </div>
 
-        {currentChannel ? (
+        {currentChannel || isSearching ? (
           <>
             {isSearching ? (
               <div className="flex-1 overflow-y-auto p-4">
@@ -650,6 +668,61 @@ export const ChatLayout = () => {
                           ))}
                         </div>
                       )}
+
+                      {/* Public Channels */}
+                      {Object.entries(grouped.publicChannels).length > 0 && (
+                        <div className="mb-6">
+                          <h3 className="text-md font-semibold mb-2">Public Channels</h3>
+                          {Object.entries(grouped.publicChannels).map(([channelId, messages]) => (
+                            <div key={channelId} className="mb-4">
+                              <div 
+                                className="flex items-center cursor-pointer hover:bg-gray-50 p-2 rounded"
+                                onClick={() => setCollapsedChannels(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(channelId)) {
+                                    next.delete(channelId);
+                                  } else {
+                                    next.add(channelId);
+                                  }
+                                  return next;
+                                })}
+                              >
+                                <span className="transform transition-transform duration-200 inline-block mr-2">
+                                  {collapsedChannels.has(channelId) ? '▸' : '▾'}
+                                </span>
+                                <span className="font-medium">#{channelNames[channelId]}</span>
+                                <span className="text-gray-500 text-sm ml-2">
+                                  ({messages.length} results)
+                                </span>
+                              </div>
+                              {!collapsedChannels.has(channelId) && (
+                                <div className="ml-6">
+                                  {messages.map(message => (
+                                    <ChatMessage
+                                      key={message.id}
+                                      message={message}
+                                      onReactionChange={() => {}}
+                                      isReply={false}
+                                      isHighlighted={false}
+                                      onClick={() => {
+                                        const channel = channels.find(c => c.id === message.channelId);
+                                        if (channel) {
+                                          handleSearchResultClick(
+                                            message.channelId,
+                                            channelNames[message.channelId],
+                                            channel.type === 'dm',
+                                            message.id
+                                          );
+                                        }
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </>
                   );
                 })()}
@@ -666,9 +739,13 @@ export const ChatLayout = () => {
                       <span className="text-gray-500">Loading messages...</span>
                     </div>
                   </div>
+                ) : messages.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center text-gray-500 text-lg">
+                    No messages yet. Start the conversation!
+                  </div>
                 ) : (
                   <MessageList 
-                    channelId={currentChannel}
+                    channelId={currentChannel || ''}
                     messages={messages}
                     setMessages={setMessages}
                     currentChannelName={currentChannelName}
@@ -689,6 +766,18 @@ export const ChatLayout = () => {
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-500">
             Select a channel to start chatting
+          </div>
+        )}
+
+        {isLoadingMessage && currentChannelType === 'bot' && (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3">
+              <svg className="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span className="text-gray-500">Waiting for bot response...</span>
+            </div>
           </div>
         )}
 

@@ -126,6 +126,7 @@ export const api = {
     },
 
     markRead: async (channelId: string): Promise<void> => {
+      if (!channelId) return;
       await client.post(`/channels/${channelId}/read`);
     },
 
@@ -191,8 +192,8 @@ export const api = {
       }
     },
 
-    search: async (query: string): Promise<Message[]> => {
-      const response = await client.get(`/search/messages`, { params: { q: query } });
+    search: async (query: string, workspaceId: string): Promise<Message[]> => {
+      const response = await client.get(`/search/messages`, { params: { q: query, workspace_id: workspaceId } });
       return snakeToCamel(response.data);
     },
 

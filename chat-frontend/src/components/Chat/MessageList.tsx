@@ -53,7 +53,7 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
   const toggleThread = async (threadId: string) => {
     console.log('Toggling thread:', threadId);
     
-    // Refresh messages to ensure we have latest data
+    if (!channelId) return; // Ensure channelId is not blank
     const updatedMessages = await api.messages.list(channelId);
     console.log('Refreshed messages:', updatedMessages.map(m => ({
       id: m.id,
@@ -90,6 +90,7 @@ export const MessageList = ({ channelId, messages, setMessages, currentChannelNa
         message={message}
         isReply={isReply}
         onReactionChange={async () => {
+          if (!channelId) return; // Ensure channelId is not blank
           const updatedMessages = await api.messages.list(channelId);
           setMessages(updatedMessages);
         }}

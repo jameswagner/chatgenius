@@ -5,9 +5,10 @@ import { Message } from '../../types/chat';
 
 interface SearchBarProps {
   onResultsFound: (messages: Message[]) => void;
+  workspaceId: string;
 }
 
-export const SearchBar = ({ onResultsFound }: SearchBarProps) => {
+export const SearchBar = ({ onResultsFound, workspaceId }: SearchBarProps) => {
   const [query, setQuery] = useState('');
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -15,7 +16,7 @@ export const SearchBar = ({ onResultsFound }: SearchBarProps) => {
     if (!query.trim()) return;
 
     try {
-      const results = await api.messages.search(query);
+      const results = await api.messages.search(query, workspaceId);
       onResultsFound(results);
     } catch (err) {
       console.error('Search failed:', err);

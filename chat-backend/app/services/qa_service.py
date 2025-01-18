@@ -426,18 +426,20 @@ Please provide a detailed answer based only on the information in the context.""
         
     async def answer_bot_message(self, content: str, workspace_id: str, channel_id: str) -> Message:
         """Answer a message from the bot"""
-        response  =await self.ask_about_workspace(
+        response  = await self.ask_about_workspace(
             question=content,
             workspace_id=workspace_id,
             get_all=True,
         )
         message = response.get("answer")
-        bot_user = self.user_service.get_bot_user("bot")
+        print(f"Bot message: {message}")
+        bot_user = self.user_service.get_bot_user("Bot")
         stored_message = self.message_service.create_message(
             content=message,
             channel_id=channel_id,
             user_id=bot_user.id
         )
+        print(f"Stored message: {stored_message}")
         return stored_message
     async def ask_about_user(self, user_id: str, question: str, include_channel_context: bool = False) -> Dict:
         """Ask a question about a specific user"""

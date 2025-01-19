@@ -56,6 +56,15 @@ def login():
     except Exception as e:
         logging.error(f"Unexpected error during login: {str(e)}")
         return jsonify({'error': 'Login failed'}), 500
+    
+@bp.route('/login/persona', methods=['POST'])
+def login_persona():
+    # No need for password, need to get a token still
+    data = request.get_json()
+    persona_user = db.get_user_by_email(data['email'])
+    auth_service = get_auth_service()
+    token = auth_service.create_token(persona_user.id)
+    return jsonify({'token': token, 'user': persona_user.to_dict()})
 
 @bp.route('/me')
 @auth_required

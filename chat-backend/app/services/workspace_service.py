@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Optional, List, Tuple
 from datetime import datetime
 from .base_service import BaseService
@@ -6,6 +7,8 @@ import boto3
 import os
 from boto3.dynamodb.conditions import Key
 from uuid import uuid4
+from ..models.user import User
+
 
 class WorkspaceService(BaseService):
     def __init__(self, table_name: str = None):
@@ -16,6 +19,7 @@ class WorkspaceService(BaseService):
             aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
             region_name=os.getenv('AWS_REGION')
         )
+        
 
     def create_workspace(self, name: str) -> Workspace:
         """Create a new workspace."""
@@ -59,8 +63,10 @@ class WorkspaceService(BaseService):
         item = response['Item']
         return Workspace(id=item['id'], name=item['name'], created_at=item['created_at']) 
 
-    def get_all_workspaces(self) -> List[Workspace]:
+    def get_all_workspaces(self, user_id: str = None) -> List[Workspace]:
         """Get all unique workspaces using the entity_type index, handling pagination internally."""
+        from .channel_service import ChannelService  # Local import to avoid circular dependency
+        channel_service = ChannelService()
         unique_workspaces = {}
         last_evaluated_key = None
         while True:
@@ -75,12 +81,21 @@ class WorkspaceService(BaseService):
             
             for item in response.get('Items', []):
                 workspace_id = item['id']
-                if workspace_id not in unique_workspaces:
+                # if user_id is not None, check if the user is a member of at least one channel in the workspace
+                if user_id:
+                    channels = channel_service.get_workspace_channels(workspace_id)
+                    for channel in channels:
+                        members = channel_service.get_channel_members(channel.id)
+                        if user_id in [member['id'] for member in members]:
+                            unique_workspaces[workspace_id] = Workspace(id=workspace_id, name=item['name'], created_at=item['created_at'])
+                            break
+                elif workspace_id not in unique_workspaces:
                     unique_workspaces[workspace_id] = Workspace(id=workspace_id, name=item['name'], created_at=item['created_at'])
             
             last_evaluated_key = response.get('LastEvaluatedKey')
             if not last_evaluated_key:
                 break
+        
         return list(unique_workspaces.values()) 
 
     def get_workspace_name_by_id(self, workspace_id: str) -> Optional[str]:
@@ -103,3 +118,25 @@ class WorkspaceService(BaseService):
         item = response['Items'][0]
         print(f"Found workspace item: {item}")
         return Workspace(id=item['id'], name=item['name'], created_at=item['created_at']) 
+
+    def get_users_by_workspace(self, workspace_id: str) -> List[User]:
+        """Get all users who are members of at least one channel in the workspace."""
+        from .channel_service import ChannelService  # Local import to avoid circular dependency
+        from .user_service import UserService
+
+        channel_service = ChannelService()
+        user_service = UserService()
+
+        # Get all channels in the workspace
+        channels = channel_service.get_workspace_channels(workspace_id)
+
+        # Collect all unique user IDs from these channels
+        user_ids = set()
+        for channel in channels:
+            members = channel_service.get_channel_members(channel.id)
+            user_ids.update(member['id'] for member in members)
+
+        # Retrieve user details based on these IDs
+        users = user_service.get_users_by_ids(list(user_ids))
+
+        return users 

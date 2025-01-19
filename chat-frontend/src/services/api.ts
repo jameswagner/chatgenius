@@ -84,7 +84,7 @@ export const api = {
 
   personas: {
     list: async () => {
-      const response = await fetch(`${API_BASE_URL}/personas`);
+      const response = await fetch(`${API_BASE_URL}/users/personas`);
       
       if (!response.ok) {
         throw new Error('Failed to fetch personas');
@@ -259,7 +259,11 @@ export const api = {
     listChannels: async (workspaceId: string): Promise<Channel[]> => {
       const response = await client.get(`/channel/workspace/${workspaceId}`);
       return snakeToCamel(response.data);
-    }
+    },
+    getUsers: async (workspaceId: string) => {
+      const response = await client.get(`/workspaces/${workspaceId}/users`);
+      return snakeToCamel(response.data);
+    },
   },
 
   qa: {

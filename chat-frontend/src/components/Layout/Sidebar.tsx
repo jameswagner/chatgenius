@@ -10,9 +10,10 @@ export interface SidebarProps {
   onWorkspaceSelect: (workspaceId: string) => void;
   channels: Channel[];
   messages: Message[];
+  onChannelsUpdate: (joinedChannels: Channel[], availableChannels: Channel[], dmChannels: Channel[], botChannel: Channel | null) => void;
 }
 
-export const Sidebar = ({ currentChannel, onChannelSelect, onWorkspaceSelect }: SidebarProps) => {
+export const Sidebar = ({ currentChannel, onChannelSelect, onWorkspaceSelect, onChannelsUpdate }: SidebarProps) => {
   const currentUserId = localStorage.getItem('userId');
   const [joinedChannels, setJoinedChannels] = useState<Channel[]>([]);
   const [availableChannels, setAvailableChannels] = useState<Channel[]>([]);
@@ -30,8 +31,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onWorkspaceSelect }: 
     return savedWorkspace || (workspaces.length > 0 ? workspaces[0].id : '');
   });
   const [isLoadingChannels, setIsLoadingChannels] = useState(false);
-
- 
+  const [botChannel] = useState<Channel | null>(null);
 
   const fetchChannels = async () => {
     if (!selectedWorkspace) return;
@@ -88,11 +88,10 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onWorkspaceSelect }: 
     try {
       await api.channels.join(channelId);
       await fetchChannels();
-      // Find the channel name from available channels
       const channel = availableChannels.find(c => c.id === channelId);
       if (channel) {
-        // Automatically select the joined channel
         onChannelSelect(channelId, channel.name, false, false);
+        onChannelsUpdate(joinedChannels, availableChannels, dmChannels, botChannel);
       }
     } catch (err) {
       console.error('Failed to join channel:', err);
@@ -103,14 +102,13 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onWorkspaceSelect }: 
     e.preventDefault();
     setError('');
     setIsCreating(true);
-    
     try {
       const channel = await api.channels.create({ name: newChannelName, workspaceId: selectedWorkspace });
       setShowCreateChannel(false);
       setNewChannelName('');
       await fetchChannels();
-      // Automatically select the new channel
       onChannelSelect(channel.id, channel.name, false, false);
+      onChannelsUpdate(joinedChannels, availableChannels, dmChannels, botChannel);
     } catch (err: any) {
       setError(err.message || 'Failed to create channel');
     } finally {
@@ -184,6 +182,8 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onWorkspaceSelect }: 
     setSelectedWorkspace(workspaceId);
     localStorage.setItem(`selectedWorkspace_${currentUserId}`, workspaceId);
     onWorkspaceSelect(workspaceId);
+    fetchChannels();
+    onChannelsUpdate(joinedChannels, availableChannels, dmChannels, botChannel);
   };
 
   useEffect(() => {
@@ -206,7 +206,6 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onWorkspaceSelect }: 
   useEffect(() => {
   }, [availableChannels]);
 
-
   const handleAskQuestion = async () => {
     if (!selectedWorkspace) {
       setError('Please select a workspace.');
@@ -228,6 +227,10 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onWorkspaceSelect }: 
       setError('Failed to handle ask question.');
     }
   };
+
+  useEffect(() => {
+    onChannelsUpdate(joinedChannels, availableChannels, dmChannels, botChannel);
+  }, [joinedChannels, availableChannels, dmChannels, botChannel]);
 
   return (
     <div className="w-64 bg-gray-800 text-white flex flex-col h-full">
@@ -407,6 +410,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onWorkspaceSelect }: 
         <UserSelector
           onClose={() => setShowUserSelector(false)}
           onUserSelect={handleStartDM}
+          workspaceId={selectedWorkspace}
         />
       )}
 

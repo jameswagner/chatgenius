@@ -5,17 +5,19 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.prompts import PromptTemplate
 from langchain_pinecone import PineconeVectorStore
 from langchain_core.documents import Document
+from app.models.user import User
 import os
 from datetime import datetime
 import tiktoken
 
 from .vector_service import VectorService
 from .user_service import UserService
+from .user_profile_service import UserProfileService
 from .channel_service import ChannelService
 from .message_service import MessageService
 from .workspace_service import WorkspaceService
 from ..models.message import Message
-
+from ..models.user_profile import UserProfile
 # Constants
 TOKEN_LIMIT = 8192
 BUFFER_SIZE = 250
@@ -31,25 +33,26 @@ class QAService:
         self.channel_service = ChannelService(table_name)
         self.message_service = MessageService()
         self.workspace_service = WorkspaceService(table_name)
+        self.user_profile_service = UserProfileService(table_name)
         # Initialize LangChain components
         self.embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
         self.index_name = os.getenv("PINECONE_INDEX")
-        self.llm = ChatOpenAI(temperature=0.7, model="gpt-4")
+        self.llm = ChatOpenAI(temperature=0.4, model="gpt-4")
         
         # Define prompt templates
         self.user_template = PromptTemplate(
-            template="""Based on the following context about a user, answer this question: {question}\nHere is recent chat history which may or may not be relevant to the current question:\n{recent_messages}\n\nContext about the user and their messages:\n{context}\n\nPlease provide a detailed answer based only on the information in the context.""",
-            input_variables=["question", "context", "recent_messages"]
+            template="""Based on the following context about a user, answer this question from the perspective of {asker}: {question}\nHere is recent chat history which may or may not be relevant to the current question:\n{recent_messages}\n\nContext about the user and their messages:\n{context}\n\nPlease provide a detailed answer based only on the information in the context.""",
+            input_variables=["question", "context", "recent_messages", "asker"]
         )
         
         self.channel_template = PromptTemplate(
-            template="""Based on the following context about a channel, answer this question: {question}\nHere is recent chat history which may or may not be relevant to the current question:\n{recent_messages}\n\nContext about the channel and its messages:\n{context}\n\nPlease provide a detailed answer based only on the information in the context.""",
-            input_variables=["question", "context", "recent_messages"]
+            template="""Based on the following context about a channel, answer this question from the perspective of {asker}: {question}\nHere is recent chat history which may or may not be relevant to the current question:\n{recent_messages}\n\nContext about the channel and its messages:\n{context}\n\nPlease provide a detailed answer based only on the information in the context.""",
+            input_variables=["question", "context", "recent_messages", "asker"]
         )
         
         self.workspace_template = PromptTemplate(
-            template="""Based on the following context about a workspace and its members, answer this question: {question}\nHere is recent chat history which may or may not be relevant to the current question:\n{recent_messages}\n\nContext about the workspace channels and users:\n{context}\n\nPlease provide a detailed answer based only on the information in the context.""",
-            input_variables=["question", "context", "recent_messages"]
+            template="""Based on the following context about a workspace and its members, answer this question from the perspective of {asker}: {question}\nHere is recent chat history which may or may not be relevant to the current question:\n{recent_messages}\n\nContext about the workspace channels and users:\n{context}\n\nPlease provide a detailed answer based only on the information in the context.""",
+            input_variables=["question", "context", "recent_messages", "asker"]
         )
         
         self.tokenizer = tiktoken.get_encoding("cl100k_base")  # Use the appropriate model
@@ -208,11 +211,12 @@ class QAService:
         message_text = f"{display_name} {timestamp_str}:\n{message.content}"
         return message_text, current_date
 
-    async def _add_message_channels_to_context(self, context_parts_before_messages, sorted_channels, user_initials, template, question, recent_messages="", start_channel=0, start_message=0):
+    async def _add_message_channels_to_context(self, context_parts_before_messages, sorted_channels, user_initials, template, question, recent_messages="", start_channel=0, start_message=0, asker: User = None):
         """Add messages from all channels to the context, starting from a specific channel and message index."""
         message_count = 0
+        asker_name = asker.name if asker else "Unknown User"
         # Format the initial context with the template for accurate token counting
-        initial_context = template.format(question=question, context="\n\n".join(context_parts_before_messages), recent_messages=recent_messages)
+        initial_context = template.format(question=question, context="\n\n".join(context_parts_before_messages), recent_messages=recent_messages, asker=asker_name)
         total_tokens = self.count_tokens(initial_context)
         max_tokens = TOKEN_LIMIT - BUFFER_SIZE
         current_date = None
@@ -229,7 +233,7 @@ class QAService:
                 context_parts.append(message_text)
                 message_count += 1
                 if message_count % MESSAGE_BATCH_SIZE == 0 or message_index == len(sorted_messages) - 1:
-                    updated_context = template.format(question=question, recent_messages=recent_messages, context="\n\n".join(context_parts))
+                    updated_context = template.format(question=question, recent_messages=recent_messages, context="\n\n".join(context_parts), asker=asker_name)
                     total_tokens = self.count_tokens(updated_context)
                     if total_tokens > max_tokens:
                         print(f"\nReached token limit at {message_count} messages")
@@ -266,7 +270,7 @@ class QAService:
         return Message(
             id=doc.metadata.get('message_id'),
             content=doc.page_content,
-            created_at=doc.metadata.get('timestamp'),
+            created_at=doc.metadata.get('start_timestamp'),
             user_id=doc.metadata.get('user_id'),
             channel_id=doc.metadata.get('channel_id')
         )
@@ -297,7 +301,8 @@ class QAService:
         additional_users: set = None,
         get_all: bool = False,
         workspace_name: str = None,
-        recent_messages: str = ""
+        recent_messages: str = "",
+        asker: User = None
     ) -> Dict:
         """Core QA method used by all specific QA methods with a window-based approach."""
         if get_all:
@@ -332,11 +337,12 @@ class QAService:
             if(len(responses) > 0):               
                 context_parts_before_messages.append(f"{PREVIOUS_MESSAGES_PREAMBLE}{responses[-1]}")
                 context_parts_before_messages.append(f"{NEW_MESSAGES_PREAMBLE}")
-            context_parts, start_channel, start_message = await self._add_message_channels_to_context(context_parts_before_messages, sorted_channels, user_initials, template, question, recent_messages, start_channel, start_message)
+            context_parts, start_channel, start_message = await self._add_message_channels_to_context(context_parts_before_messages, sorted_channels, user_initials, template, question, recent_messages, start_channel, start_message, asker)
             print("After add message channels to context")
             context = "\n\n".join(context_parts)
             print("About to format with recent messages: ", recent_messages)
-            prompt = template.format(question=question, context=context, recent_messages=recent_messages)
+            asker_name = asker.name if asker else "Unknown User"
+            prompt = template.format(question=question, context=context, recent_messages=recent_messages, asker=asker_name)
             print(f"\n\n=== FULL PROMPT TOKENS: {self.count_tokens(prompt)}")
             os.makedirs("./temp", exist_ok=True)
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -374,7 +380,7 @@ class QAService:
             workspace_name=self.channel_service.get_workspace_by_channel_id(channel_id).name
         )
 
-    async def ask_about_workspace(self, workspace_id: str, question: str, get_all: bool = False, recent_messages: str = "") -> Dict:
+    async def ask_about_workspace(self, workspace_id: str, question: str, get_all: bool = False, recent_messages: str = "", asker: User = None) -> Dict:
         """Answer questions about a workspace using context from its channels and users"""
         # Get all channels in workspace
         print(f"\n=== Starting workspace QA for '{workspace_id}' ===")
@@ -399,10 +405,40 @@ class QAService:
             additional_users=workspace_users,
             get_all=get_all,
             workspace_name=self.workspace_service.get_workspace_name_by_id(workspace_id),
-            recent_messages=recent_messages
+            recent_messages=recent_messages,
+            asker=asker
         )
         
-    async def answer_bot_message(self, content: str, workspace_id: str, channel_id: str) -> Message:
+    async def answer_persona_message(self, content: str, channel_id: str, chatting_user: User, persona_user: User) -> Message:
+        """Answer a message from a persona"""
+        recent_messages = await self._get_recent_messages(channel_id)
+        persona_profile : UserProfile = self.user_profile_service.get_most_recent_profile(persona_user.id)
+        
+        persona_profile = persona_profile.text.strip() if persona_profile and persona_profile.text.strip() else "No profile found"
+        prompt = f"""
+        You are a persona named {persona_user.name}. You are currently in a chat with a user named {chatting_user.name}.
+        Here is some information about you:
+        {persona_profile}
+        Here is the chat history:
+        {recent_messages}
+        Here is the current message:
+        {content}
+        Please respond to the message in a way that is consistent with your persona.
+        """
+        print(f"Prompt FOR PERSONA: {prompt}")
+        response = await self.llm.ainvoke(prompt)
+        message = response.content
+        print(f"Answer from persona: {message}")
+        stored_message = self.message_service.create_message(
+            content=message,
+            channel_id=channel_id,
+            user_id=persona_user.id
+        )
+        print(f"Stored message: {stored_message}")
+        return stored_message
+        
+        
+    async def answer_bot_message(self, content: str, workspace_id: str, channel_id: str, asker: User) -> Message:
         """Answer a message from the bot"""
         recent_messages = await self._get_recent_messages(channel_id)
         classification = await self._classify_query(content, recent_messages)
@@ -413,7 +449,8 @@ class QAService:
             question=content,
             workspace_id=workspace_id,
             get_all=get_all,
-            recent_messages=recent_messages
+            recent_messages=recent_messages,
+            asker=asker
         )
         message = response.get("answer")
         print(f"Bot message: {message}")
@@ -459,7 +496,7 @@ class QAService:
     async def _get_recent_messages(self, channel_id: str) -> str:
         recent_messages = self.message_service.get_messages(channel_id, limit=11, reverse=True)[1:]
         recent_messages = recent_messages[::-1]  # Reverse to get oldest first
-        return '\n'.join([msg.content for msg in recent_messages]) if recent_messages else 'N/A'
+        return '\n'.join([msg.user.name + ": " + msg.content for msg in recent_messages]) if recent_messages else 'N/A'
 
     async def _classify_query(self, content: str, recent_messages: str) -> Dict:
         # Prepare the question for OpenAI

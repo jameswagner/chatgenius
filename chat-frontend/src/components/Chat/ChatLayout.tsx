@@ -267,34 +267,26 @@ export const ChatLayout = () => {
   }, []);
 
   const handleChannelSelect = async (channelId: string, channelName: string, isDirectMessage: boolean, isBot: boolean = false) => {
+    setIsSearching(false); // Reset search state
+    setSearchResults([]); // Clear search results
     console.log('Selecting channel:', { channelId, channelName, isDirectMessage, isBot });
     setIsLoadingChannel(true);
     try {
-      // Mark previous channel as read before switching
       if (currentChannel && currentChannel !== channelId) {
         console.log('Marking previous channel as read:', currentChannel);
         await api.channels.markRead(currentChannel);
       }
-      
-      // Store channel info
       localStorage.setItem('currentChannel', channelId);
       localStorage.setItem('currentChannelName', channelName);
       localStorage.setItem('currentChannelType', isDirectMessage ? 'dm' : isBot ? 'bot' : 'public');
-      
       setCurrentChannel(channelId);
       setCurrentChannelName(channelName);
       setCurrentChannelType(isDirectMessage ? 'dm' : isBot ? 'bot' : 'public');
-      
-      // Load messages
       const messages = currentChannel ? await api.messages.list(channelId) : [];
       console.log('Loaded messages:', messages);
       setMessages(messages);
-
-      // Mark new channel as read
       console.log('Marking new channel as read:', channelId);
       await api.channels.markRead(channelId);
-      
-      // Update channel list to reflect read status
       setChannels(prevChannels => {
         const updatedChannels = prevChannels.map(channel => 
           channel.id === channelId 
@@ -304,10 +296,7 @@ export const ChatLayout = () => {
         console.log('Updated channels after marking as read:', updatedChannels);
         return updatedChannels;
       });
-      
-      // Join socket room for this channel
       socketService.joinChannel(channelId);
-      
     } catch (error) {
       console.error('Failed to load channel:', error);
     } finally {
@@ -438,14 +427,24 @@ export const ChatLayout = () => {
   }, [messages]);
 
   const handleWorkspaceSelect = (workspaceId: string) => {
+    setIsSearching(false); // Reset search state
+    setSearchResults([]); // Clear search results
     setCurrentWorkspace(workspaceId);
     localStorage.setItem('currentWorkspace', workspaceId);
-    // Reset channel-related state
     setCurrentChannel(null);
     setCurrentChannelName('');
     setCurrentChannelType('public');
     setMessages([]);
     setSearchResults([]);
+  };
+
+  const handleChannelsUpdate = (
+    joinedChannels: Channel[],
+    availableChannels: Channel[],
+    dmChannels: Channel[],
+    botChannel: Channel | null
+  ) => {
+    setChannels([...joinedChannels, ...availableChannels, ...dmChannels, botChannel].filter((channel): channel is Channel => channel !== null));
   };
 
   return (
@@ -454,6 +453,7 @@ export const ChatLayout = () => {
         currentChannel={currentChannel || ''}
         onChannelSelect={handleChannelSelect}
         onWorkspaceSelect={handleWorkspaceSelect}
+        onChannelsUpdate={handleChannelsUpdate}
         channels={channels}
         messages={messages}
       />

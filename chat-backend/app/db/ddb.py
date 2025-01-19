@@ -14,6 +14,8 @@ from ..services.search_service import SearchService
 from ..services.workspace_service import WorkspaceService
 from ..models.workspace import Workspace
 import os
+import asyncio
+from app.services.user_profile_service import UserProfileService
 
 class DynamoDB:
     def __init__(self, table_name: str = None):
@@ -237,8 +239,8 @@ class DynamoDB:
         """
         self.channel_service.add_channel_to_workspace(channel_id, workspace_id)
 
-    def get_all_workspaces(self) -> List[Workspace]:
-        return self.workspace_service.get_all_workspaces()
+    def get_all_workspaces(self, user_id: str = None) -> List[Workspace]:
+        return self.workspace_service.get_all_workspaces(user_id)
 
     def create_workspace(self, name: str) -> Workspace:
         return self.workspace_service.create_workspace(name)
@@ -254,6 +256,10 @@ class DynamoDB:
         """Retrieve a bot channel by user_id and workspace_id."""
         return self.channel_service.get_bot_channel(user_id, workspace_id)
 
+    def get_users_by_workspace(self, workspace_id: str) -> List[User]:
+        """Retrieve users who are members of at least one channel in the specified workspace."""
+        return self.workspace_service.get_users_by_workspace(workspace_id)
+
 # Workspace Schema Explanation:
 # Workspaces are managed with the following key structure in DynamoDB:
 # - PK: 'WORKSPACE#<workspace_id>'
@@ -261,3 +267,14 @@ class DynamoDB:
 # - GSI2PK: 'WORKSPACE_NAME#<workspace_name>'
 #
 # This setup allows for efficient querying by both workspace ID and name, supporting operations like creation, retrieval, and listing of workspaces.
+
+user_profile_service = UserProfileService()
+
+def create_user_profile(user_id: str, profile_data: dict):
+    return user_profile_service.store_user_profile(user_id, profile_data)
+
+def update_user_profile(user_id: str):
+    asyncio.run(user_profile_service.update_user_profiles(user_id))
+
+def update_all_personas():
+    asyncio.run(user_profile_service.update_all_personas())

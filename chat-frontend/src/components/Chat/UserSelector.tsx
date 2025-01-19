@@ -9,16 +9,17 @@ interface User {
 interface UserSelectorProps {
   onClose: () => void;
   onUserSelect: (userId: string, userName: string) => Promise<void>;
+  workspaceId: string;
 }
 
-export const UserSelector = ({ onClose, onUserSelect }: UserSelectorProps) => {
+export const UserSelector = ({ onClose, onUserSelect, workspaceId }: UserSelectorProps) => {
   const [users, setUsers] = useState<User[]>([]);
   const currentUserId = localStorage.getItem('userId');
 
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const response = await api.users.list();
+        const response = await api.workspaces.getUsers(workspaceId);
         const sortedUsers = [...response].sort((a, b) => a.name.localeCompare(b.name));
         setUsers(sortedUsers);
       } catch (err) {
@@ -26,7 +27,7 @@ export const UserSelector = ({ onClose, onUserSelect }: UserSelectorProps) => {
       }
     };
     fetchUsers();
-  }, []);
+  }, [workspaceId]);
 
   return (
     <>

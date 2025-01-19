@@ -8,6 +8,7 @@ from app.storage.file_storage import FileStorage
 import os
 from datetime import datetime, timezone
 import uuid
+from app.models.user import User
 import logging
 from ..services.qa_service import QAService
 import asyncio
@@ -238,26 +239,49 @@ def create_message(channel_id):
         if channel and channel.type == 'dm':
             # Get all messages in channel to check if this is the first one
             messages = db.get_messages(channel_id)
+            channel.members = db.get_channel_members(channel_id)
             if len(messages) == 1:  # This is the first message
                 # Get channel with members for proper name display
-                channel.members = db.get_channel_members(channel_id)
                 socketio.emit('channel.new', channel.to_dict())
                 
+            
+                
         socketio.emit('message.new', message_data, room=channel_id)
+        
+        if channel and channel.type == 'dm':
+            # get other member and see if they are a persona
+            user1 = db.get_user_by_id(channel.members[0]['id'])
+            user2 = db.get_user_by_id(channel.members[1]['id'])
+
+            other_member = user1 if user1.id != request.user_id else user2
+            
+            
+            if other_member.type == 'persona':
+                # get persona profile
+                asyncio.run(handle_persona_message(content, channel_id, request.user_id, other_member.id))
                 
         if channel and channel.type == 'bot':
             workspace_id = channel.workspace_id
             # Run the async function in the event loop
-            asyncio.run(handle_bot_message(content, workspace_id, channel_id))
+            asyncio.run(handle_bot_message(content, workspace_id, channel_id, db.get_user_by_id(request.user_id)))
             
         return jsonify(message_data)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-async def handle_bot_message(content, workspace_id, channel_id):
-    answer = await qa_service.answer_bot_message(content, workspace_id, channel_id)
+async def handle_bot_message(content, workspace_id, channel_id, asker: User):
+    answer = await qa_service.answer_bot_message(content, workspace_id, channel_id, asker)
     print("Answer obtained from bot: ", answer)
+    socketio.emit('message.new', answer.to_dict(), room=channel_id)
+
+async def handle_persona_message(content, channel_id, user_id, persona_id):
+    persona_user = db.get_user_by_id(persona_id)
+    chatting_user = db.get_user_by_id(user_id)
+    print("Chatting user: ", chatting_user)
+    print("Persona user: ", persona_user)
+    answer = await qa_service.answer_persona_message(content, channel_id, chatting_user, persona_user)
+    print("Answer obtained from persona: ", answer)
     socketio.emit('message.new', answer.to_dict(), room=channel_id)
 
 @bp.route('/uploads/<filename>')

@@ -14,7 +14,7 @@ from ..models.channel import Channel
 from ..models.message import Message
 from ..models.workspace import Workspace
 from dotenv import load_dotenv
-from pinecone import Pinecone, ServerlessSpec
+from pinecone import Pinecone
 
 
 # Load environment variables
@@ -317,6 +317,10 @@ class VectorService:
             "message_ids": [msg.id for msg in messages],
             "user_ids": list(set(msg.user_id for msg in messages))
         }
+
+        # Convert timestamps to epoch
+        metadata['start_timestamp_epoch'] = int(metadata['start_timestamp'].timestamp())
+        metadata['end_timestamp_epoch'] = int(metadata['end_timestamp'].timestamp())
 
         # Concatenate message contents with sender and concise timestamp
         content = "\n".join([

@@ -27,5 +27,18 @@ def get_workspace(workspace_id):
 @bp.route('', methods=['GET'])
 @auth_required
 def get_all_workspaces():
-    workspaces = WorkspaceService().get_all_workspaces()
-    return jsonify([workspace.to_dict() for workspace in workspaces]) 
+    #look up user from request user_id
+    user = db.get_user_by_id(request.user_id)
+    if user.type == 'persona':
+        #get all workspaces that the persona is a member of
+        workspaces = WorkspaceService().get_all_workspaces(user.id)
+    else:
+        workspaces = WorkspaceService().get_all_workspaces()
+    return jsonify([workspace.to_dict() for workspace in workspaces])
+
+@bp.route('/<workspace_id>/users', methods=['GET'])
+@auth_required
+def get_users_in_workspace(workspace_id):
+    """Retrieve users who are members of at least one channel in the specified workspace."""
+    users = db.get_users_by_workspace(workspace_id)
+    return jsonify([user.to_dict() for user in users]) 

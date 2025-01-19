@@ -272,3 +272,11 @@ class UserService(BaseService):
         profile = f"Name: {name}\nRole: {role}\nBio: {bio}"
         return profile
         
+    def get_all_personas(self) -> List[User]:
+        """Get all persona users."""
+        response = self.table.query(
+            IndexName='GSI1',
+            KeyConditionExpression=Key('GSI1PK').eq('TYPE#persona')
+        )
+        return [User(**self._clean_item(item)) for item in response['Items']]
+

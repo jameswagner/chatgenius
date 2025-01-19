@@ -556,3 +556,4 @@ class ChannelService(BaseService):
         """Retrieve a bot channel by user_id and workspace_id."""
         name = f"bot-{user_id}-{workspace_id}"
         return self.get_channel_by_name(name)
+    

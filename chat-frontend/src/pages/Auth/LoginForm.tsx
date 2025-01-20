@@ -83,11 +83,11 @@ export const LoginForm = () => {
                 setPassword('');
               }
             }}
-            className="w-full p-2 border rounded mb-4 text-gray-900"
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
           >
             <option value="">Select a persona</option>
             {personas.map(persona => (
-              <option key={persona.id} value={persona.id}>
+              <option key={persona.id} value={persona.email}>
                 {persona.name} - {persona.role}
               </option>
             ))}

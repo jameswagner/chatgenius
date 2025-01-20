@@ -63,6 +63,10 @@ def login_persona():
     data = request.get_json()
     persona_user = db.get_user_by_email(data['email'])
     auth_service = get_auth_service()
+    
+    # Set persona user status to online
+    db.update_user_status(persona_user.id, 'online')
+    
     token = auth_service.create_token(persona_user.id)
     return jsonify({'token': token, 'user': persona_user.to_dict()})
 

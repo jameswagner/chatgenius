@@ -83,6 +83,8 @@ class UserProfileService(BaseService):
         """Update user profiles by retrieving messages and generating new profiles using LLM."""
         # Retrieve the most recent profile
         most_recent_profile = self.get_most_recent_profile(user_id)
+        if most_recent_profile:
+            return
         last_message_timestamp = most_recent_profile.last_message_timestamp_epoch if most_recent_profile else int(datetime(2024, 10, 1, tzinfo=timezone.utc).timestamp())
 
         # Initialize LLM
@@ -97,6 +99,7 @@ class UserProfileService(BaseService):
         user = user_service.get_user_by_id(user_id)
 
         user_name = user.name if user else "Unknown"
+        print("BUILDING PROFILE FOR USER", user_name)
         user_role = user.role if user else "Unknown"
         user_bio = user.bio if user else "No bio available"
         
@@ -104,17 +107,14 @@ class UserProfileService(BaseService):
         
         # Set initial timestamps in epoch        
         oct_22_epoch = int(datetime(2024, 10, 15, tzinfo=timezone.utc).timestamp())
-        print(f"start_timestamp_epoch: {start_timestamp_epoch}")
 
         while start_timestamp_epoch < oct_22_epoch:
-            print(f"start_timestamp_epoch: {start_timestamp_epoch}")
+
             end_timestamp_epoch = start_timestamp_epoch + 86400  # Increment by 1 day in seconds
             message_groups = []
 
             # Increment end_timestamp_epoch until at least 50 message groups are retrieved
             while len(message_groups) < 10 and end_timestamp_epoch < oct_22_epoch:
-                print(f"start_timestamp_epoch: {start_timestamp_epoch}")
-                print(f"end_timestamp_epoch: {end_timestamp_epoch}")
                 # Create retriever with enhanced parameters
                 filtered_retriever = vector_store.as_retriever(
                     search_type="mmr",
@@ -135,7 +135,8 @@ class UserProfileService(BaseService):
                 search_query = "Retrieve messages for user profile update"
 
                 # Retrieve message groups
-                message_groups = await filtered_retriever.ainvoke(search_query)
+                message_groups_retrieved = await filtered_retriever.ainvoke(search_query)
+                message_groups.extend(message_groups_retrieved)
 
                 # Increment end_timestamp_epoch by 1 day and update start_timestamp_epoch for sliding window
                 start_timestamp_epoch = end_timestamp_epoch
@@ -147,54 +148,59 @@ class UserProfileService(BaseService):
             
             # Sort message groups by start_timestamp
             message_groups.sort(key=lambda x: x.metadata['start_timestamp'])
-
-            # Extract and format page_content
-            formatted_content = '\n\n'.join([group.page_content for group in message_groups])
             
-            #print(formatted_content[:100])
+            #use 10 message groups at a time
+            for i in range(0, len(message_groups), 10):
+                message_groups_subset = message_groups[i:i+10]
+
+                # Extract and format page_content
+                formatted_content = '\n\n'.join([group.page_content for group in message_groups_subset])
+                
+                #print(formatted_content[:100])
+                
+
+                # Prepare prompt for LLM
+                recent_profile_text = most_recent_profile.text if most_recent_profile else "No recent profile available"
+
+                prompt = f"""
+                Please create a profile of {user_name}. Their role is {user_role} and a brief bio is {user_bio}. 
+                Here is the most recent profile of them: {recent_profile_text}
+                Here are chat snippets involving this user since the most recent profile: {formatted_content}
+                Please create an updated profile based on this information about the user.
+                There is no need to include the user's role, name, or bio in the profile, as these are already separate fields, instead 
+                focus on what can be learned about the user from the chat snippets. Please include the following sections in the profile:
+                - general profile
+                - personality
+                - communication style
+                - favorite words or phrases
+                - work style
+                - goals
+                - values
+                - strengths
+                - weaknesses
+                - projects and deadlines (include specific dates when possible)
+                - relationships:
+                    - person 1
+                    - person 2
+                    ....etc
+                """
+
+                # Get updated profile from LLM
+                response = await llm.ainvoke(prompt)
+                updated_profile_text = response.content
+                #print("response", response)
             
+                # Store updated profile
+                new_profile = UserProfile(
+                    user_id=user_id,
+                    profile_id=f'PROFILE#{datetime.now(timezone.utc).isoformat()}',
+                    text=updated_profile_text,
+                    last_message_timestamp_epoch=str(message_groups[-1].metadata['end_timestamp_epoch'])
+                )
+                self.store_user_profile(user_id, new_profile.to_dict())
 
-            # Prepare prompt for LLM
-            recent_profile_text = most_recent_profile.text if most_recent_profile else "No recent profile available"
-
-            prompt = f"""
-            Please create a profile of {user_name}. Their role is {user_role} and a brief bio is {user_bio}. 
-            Here is the most recent profile of them: {recent_profile_text}
-            Here are chat snippets involving this user since the most recent profile: {formatted_content}
-            Please create an updated profile based on this information about the user.
-            There is no need to include the user's role, name, or bio in the profile, as these are already separate fields, instead 
-            focus on what can be learned about the user from the chat snippets. Please include the following sections in the profile:
-            - general profile
-            - personality
-            - communication style
-            - favorite words or phrases
-            - work style
-            - goals
-            - values
-            - strengths
-            - weaknesses
-            - relationships:
-                - person 1
-                - person 2
-                ....etc
-            """
-
-            # Get updated profile from LLM
-            response = await llm.ainvoke(prompt)
-            updated_profile_text = response.content
-            #print("response", response)
-        
-            # Store updated profile
-            new_profile = UserProfile(
-                user_id=user_id,
-                profile_id=f'PROFILE#{datetime.now(timezone.utc).isoformat()}',
-                text=updated_profile_text,
-                last_message_timestamp_epoch=str(message_groups[-1].metadata['end_timestamp_epoch'])
-            )
-            self.store_user_profile(user_id, new_profile.to_dict())
-
-            # Update most recent profile
-            most_recent_profile = new_profile
+                # Update most recent profile
+                most_recent_profile = new_profile
             
 
         print(f"User profiles updated for user_id: {user_id}") 

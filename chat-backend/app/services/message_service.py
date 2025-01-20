@@ -314,7 +314,7 @@ class MessageService(BaseService):
             
         return messages
 
-    def add_reaction(self, message_id: str, user_id: str, emoji: str) -> Reaction:
+    def add_reaction(self, message_id: str, user_id: str, emoji: str, thread_id: str = None) -> Reaction:
         """Add a reaction by updating the reactions map in the message item"""
         print(f"\n=== Adding reaction to message {message_id} ===")
         print(f"User: {user_id}")
@@ -322,7 +322,7 @@ class MessageService(BaseService):
         timestamp = self._now()
         
         # First get the message
-        message = self.get_message(message_id)
+        message = self.get_message(message_id, thread_id)
         if not message:
             raise ValueError("Message not found")
             
@@ -365,14 +365,14 @@ class MessageService(BaseService):
             created_at=timestamp
         )
 
-    def remove_reaction(self, message_id: str, user_id: str, emoji: str) -> None:
+    def remove_reaction(self, message_id: str, user_id: str, emoji: str, thread_id: str = None) -> None:
         """Remove a reaction from a message"""
         print(f"\n=== Removing reaction from message {message_id} ===")
         print(f"User: {user_id}")
         print(f"Emoji: {emoji}")
         
         # First get the message
-        message = self.get_message(message_id)
+        message = self.get_message(message_id, thread_id)
         if not message:
             raise ValueError("Message not found")
             

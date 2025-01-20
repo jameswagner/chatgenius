@@ -31,14 +31,26 @@ def get_all_workspaces():
     user = db.get_user_by_id(request.user_id)
     if user.type == 'persona':
         #get all workspaces that the persona is a member of
+        print(f"Getting all workspaces for persona {user.id}")
         workspaces = WorkspaceService().get_all_workspaces(user.id)
     else:
         workspaces = WorkspaceService().get_all_workspaces()
     return jsonify([workspace.to_dict() for workspace in workspaces])
 
-@bp.route('/<workspace_id>/users', methods=['GET'])
+@bp.route('/<workspace_id>/members', methods=['GET'])
 @auth_required
 def get_users_in_workspace(workspace_id):
     """Retrieve users who are members of at least one channel in the specified workspace."""
     users = db.get_users_by_workspace(workspace_id)
-    return jsonify([user.to_dict() for user in users]) 
+    return jsonify([user.to_dict() for user in users])
+
+@bp.route('/<workspace_id>/members', methods=['POST'])
+def add_user_to_workspace(workspace_id):
+    user_id = request.json.get('user_id')
+    db.add_user_to_workspace(workspace_id, user_id)
+    return jsonify({'message': 'User added to workspace successfully'}), 201
+
+@bp.route('/users/<user_id>/workspaces', methods=['GET'])
+def get_workspaces_by_user(user_id):
+    workspaces = db.get_workspaces_by_user(user_id)
+    return jsonify(workspaces), 200 

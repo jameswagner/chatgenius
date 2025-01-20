@@ -418,7 +418,7 @@ class ChannelService(BaseService):
             print(f"Error getting channel by name: {e}")
             return None 
 
-    def get_workspace_channels(self, workspace_id: str, user_id: Optional[str] = None, public_only: bool = True) -> List[Channel]:
+    def get_workspace_channels(self, workspace_id: str, user_id: Optional[str] = None, public_only: bool = False) -> List[Channel]:
         """Get all channels in a workspace, optionally including membership status for a specific user.
         
         Args:
@@ -428,13 +428,12 @@ class ChannelService(BaseService):
         Returns:
             List of channels in the workspace, with optional membership status
         """
-        logging.info(f'Querying channels for workspace_id: {workspace_id}, user_id: {user_id}')
+        #ogging.info(f'Querying channels for workspace_id: {workspace_id}, user_id: {user_id}')
         response = self.table.query(
             IndexName='GSI4',
             KeyConditionExpression=Key('GSI4PK').eq(f'WORKSPACE#{workspace_id}') & 
                                  Key('GSI4SK').begins_with('CHANNEL#')
         )
-        
         
         channels = []
         for item in response['Items']:
@@ -443,9 +442,15 @@ class ChannelService(BaseService):
             # Check if the user is a member of the channel, if user_id is provided
             if user_id:
                 is_member = self.is_channel_member(channel_id, user_id)
+                
+                
+                if not is_member and channel_data['type'] != 'public':
+                    continue
                 channel_data['is_member'] = is_member
             if public_only and channel_data['type'] != 'public':
                 continue
+            if channel_data['type'] == 'dm':
+                channel_data['members'] = self.get_channel_members(channel_id)
             channels.append(Channel(**channel_data))
         return channels
 

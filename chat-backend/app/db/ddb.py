@@ -260,6 +260,14 @@ class DynamoDB:
         """Retrieve users who are members of at least one channel in the specified workspace."""
         return self.workspace_service.get_users_by_workspace(workspace_id)
 
+    def add_user_to_workspace(self, workspace_id: str, user_id: str):
+        # Pass through to WorkspaceService
+        self.workspace_service.add_user_to_workspace(workspace_id, user_id)
+
+    def get_workspaces_by_user(self, user_id: str) -> List[str]:
+        # Pass through to WorkspaceService
+        return self.workspace_service.get_workspaces_by_user(user_id)
+
 # Workspace Schema Explanation:
 # Workspaces are managed with the following key structure in DynamoDB:
 # - PK: 'WORKSPACE#<workspace_id>'

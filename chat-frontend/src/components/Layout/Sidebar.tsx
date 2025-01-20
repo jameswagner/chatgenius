@@ -40,10 +40,12 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onWorkspaceSelect, on
     try {
       const channels = await api.channels.listByWorkspace(selectedWorkspace);
       console.log('Fetched channels:', channels);
-      const joined = channels.filter((channel: Channel) => channel.isMember);
-      const available = channels.filter((channel: Channel) => !channel.isMember);
+      const joined = channels.filter((channel: Channel) => channel.isMember && channel.type !== 'dm');
+      const available = channels.filter((channel: Channel) => !channel.isMember && channel.type === 'public');
+      const dms = channels.filter((channel: Channel) => channel.type === 'dm');
       setJoinedChannels(joined);
       setAvailableChannels(available);
+      setDmChannels(dms);
     } catch (error: any) {
       console.error('Failed to fetch channels:', error);
     } finally {
@@ -152,9 +154,10 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onWorkspaceSelect, on
   };
 
   const renderChannelName = (channel: Channel) => {
+    if (channel.type === 'bot') return null; // Exclude bot channels
     return (
       <div className="flex items-center gap-2">
-        <span>#{channel.name}</span>
+        <span>#{channel.type === 'dm' ? formatDMChannelName(channel) : channel.name}</span>
         {channel.type === 'private' && (
           <span className="text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded">private</span>
         )}
@@ -319,7 +322,7 @@ export const Sidebar = ({ currentChannel, onChannelSelect, onWorkspaceSelect, on
           </div>
           {!isLoadingChannels && !isChannelsCollapsed && (
             <ul className="space-y-1">
-              {Array.isArray(joinedChannels) && joinedChannels.map(channel => (
+              {Array.isArray(joinedChannels) && joinedChannels.filter(channel => channel.type !== 'bot').map(channel => (
                 <li 
                   key={channel.id}
                   data-testid={`channel-${channel.name}`}

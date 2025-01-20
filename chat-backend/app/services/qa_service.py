@@ -51,7 +51,7 @@ class QAService:
         )
         
         self.workspace_template = PromptTemplate(
-            template="""Based on the following context about a workspace and its members, answer this question from the perspective of {asker}: {question}\nHere is recent chat history which may or may not be relevant to the current question:\n{recent_messages}\n\nContext about the workspace channels and users:\n{context}\n\nPlease provide a detailed answer based only on the information in the context.""",
+            template="""Here is recent chat history which may or may not be relevant to the current question:\n{recent_messages}\n\nAnd here is the most recent message/question from {asker}: {question} Here is some wider context about the workspace channels and users:\n{context}\n\nPlease provide a detailed answer based only on the information in the context and chat history. Note that, as in a real chat between a bot and a user, the chat history may or may not be relevant to the most recently asked question""",
             input_variables=["question", "context", "recent_messages", "asker"]
         )
         
@@ -93,7 +93,7 @@ class QAService:
             }
         )
         
-        print(f"\nSearching with enhanced query for topic: {question}")
+        print(f"\nSearching with query for topic: {question}")
         results = await filtered_retriever.ainvoke(search_query)
         print(f"Found {len(results)} semantically relevant messages")
         return results
@@ -412,18 +412,36 @@ class QAService:
     async def answer_persona_message(self, content: str, channel_id: str, chatting_user: User, persona_user: User) -> Message:
         """Answer a message from a persona"""
         recent_messages = await self._get_recent_messages(channel_id)
+        basic_profile = self.user_service.get_user_profile(persona_user.id)
         persona_profile : UserProfile = self.user_profile_service.get_most_recent_profile(persona_user.id)
         
+        chatting_user_basic_profile = self.user_service.get_user_profile(chatting_user.id) or "N/A"
+        chatting_user_profile = self.user_profile_service.get_most_recent_profile(chatting_user.id) or "N/A"
+        
+        snippets = await self._get_snippets(recent_messages, content, persona_user.id)
+        
         persona_profile = persona_profile.text.strip() if persona_profile and persona_profile.text.strip() else "No profile found"
+        chatting_user_profile = chatting_user_profile.text.strip() if chatting_user_profile and chatting_user_profile.text.strip() else "No profile found"
         prompt = f"""
         You are a persona named {persona_user.name}. You are currently in a chat with a user named {chatting_user.name}.
-        Here is some information about you:
+        Here is basic information about you:
+        {basic_profile}
+        And more detailed information about you:
         {persona_profile}
+        Here is basic information about the user you are chatting with:
+        {chatting_user_basic_profile}
+        And more detailed information about the user you are chatting with:
+        {chatting_user_profile}
         Here is the chat history:
         {recent_messages}
+        Here are some snippets from other channels that may or may not be relevant to the current conversation:
+        {snippets}
         Here is the current message:
         {content}
-        Please respond to the message in a way that is consistent with your persona.
+        Please respond to the message in a way that is consistent with your persona, the chat history, and the snippets.
+        
+        YOU MUST also response in a way that reflects a natural style of communication typical in a direct message in a chat app 
+        (eg, don't say "Hi" unless the user says it first).
         """
         print(f"Prompt FOR PERSONA: {prompt}")
         response = await self.llm.ainvoke(prompt)
@@ -463,40 +481,50 @@ class QAService:
         print(f"Stored message: {stored_message}")
         return stored_message
     
-    async def ask_about_user(self, user_id: str, question: str, include_channel_context: bool = False) -> Dict:
-        """Ask a question about a specific user"""
-        if include_channel_context:
-            # Get channels the user is a member of
-            channels = self.channel_service.get_channels_for_user(user_id)
-            channel_ids = [channel.id for channel in channels]
-            message_filter = {
-                "$or": [
-                    {"type": "message", "user_id": user_id},
-                    {"type": "message", "channel_id": {"$in": channel_ids}}
-                ]
-            }
-        else:
-            message_filter = {"type": "message", "user_id": user_id}
-        
-        # Prepare input
-        input_text = f"User ID: {user_id}, Question: {question}"
-        token_count = self.count_tokens(input_text)
-
-        # Check token limit (e.g., 4096 for GPT-3)
-        if token_count > 8192:
-            raise ValueError("Input exceeds token limit!")
-
-        return await self._get_qa_response(
-            question=question,
-            message_filter=message_filter,
-            template=self.user_template,
-            additional_users={user_id}
-        ) 
 
     async def _get_recent_messages(self, channel_id: str) -> str:
         recent_messages = self.message_service.get_messages(channel_id, limit=11, reverse=True)[1:]
         recent_messages = recent_messages[::-1]  # Reverse to get oldest first
         return '\n'.join([msg.user.name + ": " + msg.content for msg in recent_messages]) if recent_messages else 'N/A'
+    
+    
+    async def _get_snippets(self, recent_messages: str, question: str, user_id) -> List[str]:
+        
+        
+        question = f"""
+        Please analyze the chat history below, including the final message, and craft a question for a vector database that has the 
+        best chance of retrieving relevant chat snippets. When crafting the question:
+        Use prior context if the final message refers to earlier parts of the conversation (e.g., through pronouns, 
+        unclear references, or a continuation of an earlier topic).
+        Ignore prior context if the final message introduces a new topic unrelated to earlier messages.
+        Ensure the crafted question is clear, specific, and incorporates any necessary details 
+        from prior context to resolve ambiguity or enhance relevance.
+        Recent messages:
+        {recent_messages}
+        LAST MESSAGE:
+        {question}
+        """
+        print(f"Question for snippets: {question}")
+        response = await self.llm.ainvoke(question)
+        vector_db_question = response.content
+        print(f"Vector DB question: {vector_db_question}")
+        vector_store = self.index
+        filter_dict = {
+            "user_ids": {"$eq": user_id}
+        }
+        filtered_retriever = vector_store.as_retriever(
+            search_type="mmr",
+            search_kwargs={
+                "k": 10,  
+                "fetch_k": 100,  
+                "lambda_mult": 0.7,
+                "namespace": "grouped_messages",
+                "filter": filter_dict,
+            }
+        )
+        message_docs = await filtered_retriever.ainvoke(vector_db_question)
+        message_texts = [doc.page_content for doc in message_docs]
+        return message_texts
 
     async def _classify_query(self, content: str, recent_messages: str) -> Dict:
         # Prepare the question for OpenAI

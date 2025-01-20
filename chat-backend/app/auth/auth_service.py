@@ -77,6 +77,7 @@ class AuthService:
         if not user:
             logging.warning(f"Login failed: No user found with email {email}")
             raise ValueError('Invalid email or password')
+        print(f"User: {user}")
             
         # Handle persona users (no password required)
         if user.type == 'persona':

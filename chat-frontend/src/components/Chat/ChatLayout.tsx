@@ -121,7 +121,10 @@ export const ChatLayout = () => {
           content: message.content,
           createdAt: message.createdAt
         });
-        
+
+        // Remove temporary message with the same content
+        setMessages(prevMessages => prevMessages.filter(msg => !(msg.id.startsWith('temp-') && msg.content === message.content)));
+
         // Cache user data
         if (message.user) {
           userCache.current[message.userId] = message.user;
@@ -242,6 +245,23 @@ export const ChatLayout = () => {
   const handleSendMessage = async (content: string, files: File[], threadId?: string) => {
     if (!currentChannel) return;
     setIsLoadingMessage(true);
+
+    // Create a temporary message
+    const tempMessage: Message = {
+      id: `temp-${Date.now()}`, // Temporary ID
+      content,
+      userId: localStorage.getItem('userId') || '',
+      channelId: currentChannel,
+      createdAt: new Date().toISOString(),
+      version: 1,
+      attachments: [],
+      user: userCache.current[localStorage.getItem('userId') || ''],
+      // Add other necessary fields with default values
+    };
+
+    // Optimistically add the temporary message
+    setMessages(prevMessages => [...prevMessages, tempMessage]);
+
     try {
       const formData = new FormData();
       formData.append('content', content);
@@ -255,6 +275,8 @@ export const ChatLayout = () => {
     } catch (error) {
       console.error('Failed to send message:', error);
     } finally {
+      // Remove the temporary message
+      setMessages(prevMessages => prevMessages.filter(msg => msg.id !== tempMessage.id));
       setIsLoadingMessage(false);
     }
   };
@@ -277,10 +299,13 @@ export const ChatLayout = () => {
         await api.channels.markRead(currentChannel);
       }
       localStorage.setItem('currentChannel', channelId);
-      localStorage.setItem('currentChannelName', channelName);
+      const selectedChannel = channels.find(channel => channel.id === channelId);
+      const displayName = selectedChannel ? getChannelDisplayName(selectedChannel, isDirectMessage) : channelName;
+      console.log('Selected channel display name:', displayName);
+      localStorage.setItem('currentChannelName', displayName);
       localStorage.setItem('currentChannelType', isDirectMessage ? 'dm' : isBot ? 'bot' : 'public');
       setCurrentChannel(channelId);
-      setCurrentChannelName(channelName);
+      setCurrentChannelName(displayName);
       setCurrentChannelType(isDirectMessage ? 'dm' : isBot ? 'bot' : 'public');
       const messages = currentChannel ? await api.messages.list(channelId) : [];
       console.log('Loaded messages:', messages);

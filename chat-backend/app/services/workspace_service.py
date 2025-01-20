@@ -9,6 +9,18 @@ from boto3.dynamodb.conditions import Key
 from uuid import uuid4
 from ..models.user import User
 
+# WorkspaceService Schema:
+# - Primary Key (PK): WORKSPACE#{workspace_id}
+# - Sort Key (SK): MEMBER#{user_id} or #METADATA for workspace metadata
+# - GSI2PK: WORKSPACE_NAME#{name} for querying by workspace name
+# - GSI2SK: #METADATA for workspace metadata
+# - GSI5PK: USER#{user_id} for querying workspaces by user
+# - GSI5SK: WORKSPACE#{workspace_id} for querying users by workspace
+# This schema allows efficient lookup of:
+#   - Users given a workspace
+#   - Workspaces given a user
+#   - Workspaces by name
+#   - Metadata retrieval for workspaces
 
 class WorkspaceService(BaseService):
     def __init__(self, table_name: str = None):
@@ -83,12 +95,10 @@ class WorkspaceService(BaseService):
                 workspace_id = item['id']
                 # if user_id is not None, check if the user is a member of at least one channel in the workspace
                 if user_id:
-                    channels = channel_service.get_workspace_channels(workspace_id)
-                    for channel in channels:
-                        members = channel_service.get_channel_members(channel.id)
-                        if user_id in [member['id'] for member in members]:
-                            unique_workspaces[workspace_id] = Workspace(id=workspace_id, name=item['name'], created_at=item['created_at'])
-                            break
+                    channels = channel_service.get_workspace_channels(workspace_id, user_id)
+                    # if channel.is_member is true for any channel in the workspace, add the workspace to the unique_workspaces dictionary
+                    if any(channel.is_member for channel in channels):
+                        unique_workspaces[workspace_id] = Workspace(id=workspace_id, name=item['name'], created_at=item['created_at'])
                 elif workspace_id not in unique_workspaces:
                     unique_workspaces[workspace_id] = Workspace(id=workspace_id, name=item['name'], created_at=item['created_at'])
             
@@ -140,3 +150,20 @@ class WorkspaceService(BaseService):
         users = user_service.get_users_by_ids(list(user_ids))
 
         return users 
+
+    def add_user_to_workspace(self, workspace_id: str, user_id: str):
+        # Add a user to a workspace
+        item = {
+            'PK': f'WORKSPACE#{workspace_id}',
+            'SK': f'MEMBER#{user_id}',
+            'GSI5PK': f'USER#{user_id}',
+            'GSI5SK': f'WORKSPACE#{workspace_id}'
+        }
+        self.dynamodb.put_item(Item=item)
+
+    def get_workspaces_by_user(self, user_id: str) -> List[str]:
+        # Retrieve all workspaces a user is a member of
+        response = self.table.query(
+            KeyConditionExpression=Key('PK').eq(f'WORKSPACE#{user_id}')
+        )
+        return [item['SK'].split('#')[1] for item in response['Items']]

@@ -308,7 +308,6 @@ def get_workspace_channels(workspace_id):
     """Get all channels in a workspace for a specific user."""
     try:
         user_id = request.user_id  # Get the user ID from the request
-        print(f'Retrieving channels for workspace_id: {workspace_id}, user_id: {user_id}')
         
         channels = db.get_workspace_channels(workspace_id, user_id)  # Pass user ID to the service function
         print(f'Retrieving channels for workspace_id: {workspace_id}, user_id: {user_id}')

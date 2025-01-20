@@ -261,7 +261,7 @@ export const api = {
       return snakeToCamel(response.data);
     },
     getUsers: async (workspaceId: string) => {
-      const response = await client.get(`/workspaces/${workspaceId}/users`);
+      const response = await client.get(`/workspaces/${workspaceId}/members`);
       return snakeToCamel(response.data);
     },
   },

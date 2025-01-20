@@ -6,6 +6,7 @@ interface Persona {
   id: string;
   name: string;
   email: string;
+  role: string;
 }
 
 export const LoginForm = () => {
@@ -82,12 +83,12 @@ export const LoginForm = () => {
                 setPassword('');
               }
             }}
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2"
+            className="w-full p-2 border rounded mb-4 text-gray-900"
           >
-            <option value="">Select a persona...</option>
+            <option value="">Select a persona</option>
             {personas.map(persona => (
-              <option key={persona.id} value={persona.email}>
-                {persona.name}
+              <option key={persona.id} value={persona.id}>
+                {persona.name} - {persona.role}
               </option>
             ))}
           </select>
